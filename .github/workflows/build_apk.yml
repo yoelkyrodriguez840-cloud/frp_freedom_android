@@ -1,5 +1,7 @@
 name: Build Android APK
 
+# contruccion dwl flujo de trabaho para contruir la apk
+
 on:
   push:
     branches: [main, develop]
@@ -59,11 +61,15 @@ jobs:
         run: |
           echo "Installing dependencies in: $(pwd)"
           pip install --upgrade pip
+
+          # Instalar dependencias desde requirements.txt
           pip install -r requirements.txt
-          # Instalar flet sin dependencias opcionales problemáticas
-          pip install flet --no-deps
-          # Instalar solo las dependencias necesarias de flet
-          pip install watchdog webbrowser
+
+          # Verificar instalación de flet
+          python -c "import flet; print(f'Flet version: {flet.__version__}')"
+
+          # Verificar que watchdog esté instalado (dependencia de flet)
+          python -c "import watchdog; print('watchdog installed')" 2>/dev/null || echo "watchdog not found (but it's fine)"
 
       - name: Verify flet installation
         run: |
@@ -71,6 +77,11 @@ jobs:
           python -c "import flet; print(f'Flet version: {flet.__version__}')"
           which flet || echo "flet not in PATH"
           flet --version || echo "flet command not available"
+          # Verificar dependencias clave
+          python -c "import yaml; print('✅ yaml installed')"
+          python -c "import cryptography; print('✅ cryptography installed')"
+          python -c "import requests; print('✅ requests installed')"
+          python -c "import msgpack; print('✅ msgpack installed')"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -233,6 +244,7 @@ jobs:
       - name: Install test dependencies
         run: |
           echo "Installing test dependencies in: $(pwd)"
+          pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov
 
