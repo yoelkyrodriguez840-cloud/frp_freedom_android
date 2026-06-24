@@ -43,11 +43,6 @@ jobs:
             echo "❌ requirements.txt NOT found in root!"
             exit 1
           fi
-          if [ -d "tests" ]; then
-            echo "✅ tests directory found"
-          else
-            echo "⚠️ tests directory not found"
-          fi
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -71,14 +66,25 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget unzip
+
+          # Crear estructura de directorios para Android SDK
+          mkdir -p android-sdk/cmdline-tools/latest
+
+          # Descargar command line tools
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip commandlinetools-linux-9477386_latest.zip -d android-sdk
-          mkdir -p android-sdk/cmdline-tools
-          mv android-sdk/cmdline-tools android-sdk/cmdline-tools/latest
+
+          # Extraer directamente en la ubicación correcta
+          unzip commandlinetools-linux-9477386_latest.zip -d android-sdk/cmdline-tools/latest
+
+          # Configurar variables de entorno
           echo "ANDROID_SDK_ROOT=${{ github.workspace }}/android-sdk" >> $GITHUB_ENV
           echo "${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "${{ github.workspace }}/android-sdk/platform-tools" >> $GITHUB_PATH
+
+          # Aceptar licencias
           yes | sdkmanager --licenses
+
+          # Instalar herramientas necesarias
           sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
 
       - name: Build APK
@@ -139,12 +145,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
       - name: Debug - Verify files
         run: |
           echo "=== Current directory ==="
@@ -161,6 +161,12 @@ jobs:
             echo "⚠️ tests directory not found"
           fi
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
       - name: Install test dependencies
         run: |
           echo "Installing test dependencies in: $(pwd)"
@@ -174,7 +180,6 @@ jobs:
             python -m pytest tests/ -v --cov=. --cov-report=xml
           else
             echo "⚠️ No tests directory found, skipping tests"
-            # Crear un archivo coverage vacío para no fallar
             echo '<?xml version="1.0"?><coverage></coverage>' > coverage.xml
           fi
 
