@@ -69,6 +69,19 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.5"
+          channel: "stable"
+          cache: true
+
+      - name: Verify Flutter installation
+        run: |
+          echo "=== Verifying Flutter installation ==="
+          flutter --version
+          flutter doctor -v
+
       - name: Setup Android SDK
         run: |
           sudo apt-get update
@@ -101,18 +114,29 @@ jobs:
           ls -la android-sdk/cmdline-tools/latest/bin/ || echo "❌ sdkmanager directory not found!"
           which sdkmanager || echo "⚠️ sdkmanager not in PATH yet"
 
-          # Aceptar licencias
+          # Aceptar licencias (sin interacción)
           yes | sdkmanager --licenses
 
           # Instalar herramientas necesarias
           sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
 
+      - name: Accept Android Licenses
+        run: |
+          # Asegurar que todas las licencias estén aceptadas
+          yes | sdkmanager --licenses
+          yes | sdkmanager --licenses || true
+
       - name: Build APK
         run: |
           echo "Building APK in: $(pwd)"
           echo "Using Android SDK at: $ANDROID_SDK_ROOT"
-          # Comando correcto para flet build apk
-          flet build apk --build-number ${{ github.run_number }}
+          echo "Using Flutter at: $(which flutter)"
+
+          # Forzar la instalación silenciosa de Flutter SDK si es necesario
+          export FLUTTER_ROOT=$(flutter --version | head -1 | grep -oP 'Flutter \K[^ ]+' || echo "")
+
+          # Comando correcto para flet build apk con --yes para evitar prompts
+          flet build apk --build-number ${{ github.run_number }} --yes
 
       - name: Debug - List build output
         run: |
