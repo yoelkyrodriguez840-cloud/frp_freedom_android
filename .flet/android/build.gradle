@@ -1,0 +1,24 @@
+android {
+    // Configuración de SDK mínimo
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 36
+    }
+    
+    // Configuración de compilación
+    compileSdkVersion 36
+    
+    // Configuración de NDK
+    ndkVersion "27.0.12077973"
+    
+    // Configuración de Java
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    
+    // Configuración de Kotlin
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}

@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main, develop, desarrollo]
+    branches: [main, develop]
     paths:
       - "frp_freedom_android/**"
       - ".github/workflows/build_apk.yml"
@@ -70,7 +70,8 @@ jobs:
             curl \
             aapt \
             default-jre \
-            default-jdk
+            default-jdk \
+            file
 
       - name: Install bundletool (for AAB conversion)
         run: |
@@ -100,6 +101,26 @@ jobs:
 
           # Verificar instalación de flet
           python -c "import flet; print(f'Flet version: {flet.__version__}')" || echo "⚠️ Flet no instalado correctamente"
+
+      - name: Upgrade Flet to latest version
+        run: |
+          echo "=== Actualizando Flet ==="
+          pip install --upgrade flet
+
+          # Verificar versión
+          python -c "import flet; print(f'Flet version: {flet.__version__}')"
+
+          # Si Flet es >= 0.22.0, usar nuevas opciones
+          python -c "
+          import flet
+          version = tuple(map(int, flet.__version__.split('.')))
+          if version >= (0, 22, 0):
+              print('✅ Flet 0.22+ detectado')
+              import os
+              os.makedirs('.flet', exist_ok=True)
+              with open('.flet/version', 'w') as f:
+                  f.write('0.22.0')
+          "
 
       - name: Verify flet installation
         run: |
@@ -142,7 +163,7 @@ jobs:
               except ImportError as e2:
                   print(f'❌ Fallo en import desde android_app: {e2}')
                   sys.exit(1)
-          " || echo "⚠️ Falló la verificación de imports"
+          "
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -230,34 +251,90 @@ jobs:
           echo "**/*.pyc" >> .fletignore
           echo "**/tests/*" >> .fletignore
           echo "**/test_*.py" >> .fletignore
+          echo "**/venv/*" >> .fletignore
+          echo "**/.git/*" >> .fletignore
 
-      - name: Create Flet config to skip Android dependencies
+      - name: Create Flet Android configuration
         run: |
-          mkdir -p .flet
-          cat > .flet/config.json << 'EOF'
-          {
-            "android": {
-              "dependencies": {
-                "skip": ["jnius", "pyjnius", "kivy", "plyer"]
+          echo "=== Creando configuración para Flet Android ==="
+
+          # Crear directorio de configuración
+          mkdir -p .flet/android
+
+          # Crear build.gradle personalizado
+          cat > .flet/android/build.gradle << 'EOF'
+          android {
+              defaultConfig {
+                  minSdkVersion 21
+                  targetSdkVersion 36
               }
-            },
-            "build": {
-              "skip_android_deps": true
-            }
+              compileSdkVersion 36
+              ndkVersion "27.0.12077973"
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
           }
           EOF
 
+          echo "✅ build.gradle creado"
+          cat .flet/android/build.gradle
+
+          echo ""
+          echo "=== Creando flet_config.yaml ==="
+          cat > flet_config.yaml << 'EOF'
+          android:
+            min_sdk_version: 21
+            target_sdk_version: 36
+            compile_sdk_version: 36
+            ndk_version: "27.0.12077973"
+            build:
+              skip_android_deps: true
+            dependencies:
+              skip:
+                - jnius
+                - pyjnius
+                - kivy
+                - plyer
+          EOF
+
+          echo "✅ flet_config.yaml creado"
+          cat flet_config.yaml
+
+          echo ""
+          echo "=== Creando .flet/properties ==="
+          mkdir -p .flet
+          cat > .flet/properties << 'EOF'
+          android.minSdkVersion=21
+          android.targetSdkVersion=36
+          android.compileSdkVersion=36
+          android.ndkVersion=27.0.12077973
+          android.skipAndroidDeps=true
+          android.buildMode=release
+          EOF
+
+          echo "✅ .flet/properties creado"
+          cat .flet/properties
+
       - name: Ensure main.py exists and is valid
         run: |
-          echo "=== Verificando y creando main.py si es necesario ==="
+          echo "=== Verificando estructura del proyecto ==="
 
-          # Verificar si main.py existe
+          echo "Estructura del directorio:"
+          find . -name "*.py" -type f | head -30 | sort
+
+          echo ""
+          echo "=== Verificando main.py en raíz ==="
           if [ -f "main.py" ]; then
-            echo "✅ main.py encontrado"
-            echo "Contenido de main.py:"
+            echo "✅ main.py encontrado en raíz"
+            echo "Contenido:"
             cat main.py
           else
-            echo "❌ main.py NO encontrado, creando uno..."
+            echo "❌ ERROR: main.py no encontrado en raíz"
+            # Crear main.py
             cat > main.py << 'PYEOF'
           #!/usr/bin/env python3
           """
@@ -267,49 +344,106 @@ jobs:
           import sys
           import os
 
-          # Agregar el directorio actual al path
           sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
           def main():
-              """Punto de entrada principal para Flet"""
               try:
-                  # Intentar importar desde la estructura de paquete
                   from frp_freedom_android.android_app import main as app_main
                   app_main()
-              except ImportError:
-                  # Si falla, intentar importar directamente
-                  try:
-                      from android_app import main as app_main
-                      app_main()
-                  except ImportError as e:
-                      print(f"Error: No se pudo importar la aplicación: {e}")
-                      print("Directorio actual:", os.getcwd())
-                      print("Archivos en el directorio:", os.listdir())
-                      if os.path.exists("frp_freedom_android"):
-                          print("Contenido de frp_freedom_android:", os.listdir("frp_freedom_android"))
-                      sys.exit(1)
+              except ImportError as e:
+                  print(f"Error: {e}")
+                  sys.exit(1)
 
           if __name__ == "__main__":
               main()
           PYEOF
             echo "✅ main.py creado"
-            cat main.py
           fi
 
-          # Verificar que __init__.py existe en frp_freedom_android
-          if [ -d "frp_freedom_android" ] && [ ! -f "frp_freedom_android/__init__.py" ]; then
-            echo "⚠️ __init__.py no encontrado en frp_freedom_android, creando..."
-            echo "# FRP Freedom Android Package" > frp_freedom_android/__init__.py
-            echo "from .android_app import main" >> frp_freedom_android/__init__.py
-            echo "__version__ = '1.0.0'" >> frp_freedom_android/__init__.py
-          fi
-
-          # Verificar que android_app.py existe
-          if [ -d "frp_freedom_android" ] && [ ! -f "frp_freedom_android/android_app.py" ]; then
-            echo "❌ ERROR CRÍTICO: android_app.py no encontrado en frp_freedom_android/"
-            echo "Contenido de frp_freedom_android/:"
+          echo ""
+          echo "=== Verificando frp_freedom_android/ ==="
+          if [ -d "frp_freedom_android" ]; then
+            echo "✅ Directorio frp_freedom_android/ existe"
+            echo "Contenido:"
             ls -la frp_freedom_android/
-            exit 1
+            
+            # Verificar archivos necesarios
+            REQUIRED_FILES=("__init__.py" "android_app.py" "android_config.py" "platform_adapter.py")
+            MISSING_FILES=()
+            
+            for file in "${REQUIRED_FILES[@]}"; do
+              if [ -f "frp_freedom_android/$file" ]; then
+                echo "✅ $file encontrado"
+              else
+                echo "❌ $file NO encontrado"
+                MISSING_FILES+=("$file")
+              fi
+            done
+            
+            if [ ${#MISSING_FILES[@]} -gt 0 ]; then
+              echo "ERROR: Faltan archivos en frp_freedom_android/: ${MISSING_FILES[*]}"
+              
+              # Intentar copiar desde la raíz si existen
+              for file in "${MISSING_FILES[@]}"; do
+                if [ -f "$file" ]; then
+                  cp "$file" frp_freedom_android/
+                  echo "✅ $file copiado desde raíz"
+                fi
+              done
+            fi
+            
+            # Verificar subdirectorios
+            SUBDIRS=("adapters" "core_android" "models" "views")
+            for dir in "${SUBDIRS[@]}"; do
+              if [ -d "frp_freedom_android/$dir" ]; then
+                echo "✅ $dir/ encontrado"
+              elif [ -d "$dir" ]; then
+                echo "⚠️ $dir/ encontrado en raíz, moviendo..."
+                mv "$dir" frp_freedom_android/
+                echo "✅ $dir/ movido a frp_freedom_android/"
+              else
+                echo "⚠️ $dir/ no encontrado (puede que no sea necesario)"
+              fi
+            done
+            
+          else
+            echo "❌ ERROR: Directorio frp_freedom_android/ no existe"
+            # Crear el directorio y mover archivos
+            mkdir -p frp_freedom_android
+            for file in android_app.py android_config.py platform_adapter.py __init__.py; do
+              if [ -f "$file" ]; then
+                mv "$file" frp_freedom_android/
+                echo "✅ $file movido a frp_freedom_android/"
+              fi
+            done
+            for dir in adapters core_android models views; do
+              if [ -d "$dir" ]; then
+                mv "$dir" frp_freedom_android/
+                echo "✅ $dir/ movido a frp_freedom_android/"
+              fi
+            done
+          fi
+
+          echo ""
+          echo "=== Verificando __init__.py ==="
+          if [ -f "frp_freedom_android/__init__.py" ]; then
+            echo "✅ __init__.py existe"
+            echo "Contenido:"
+            cat frp_freedom_android/__init__.py
+          else
+            echo "❌ ERROR: __init__.py no existe en frp_freedom_android/"
+            cat > frp_freedom_android/__init__.py << 'EOF'
+          """
+          FRP Freedom - Android APK Interface
+          A Flet-based Android application for FRP bypass
+          """
+
+          __version__ = "1.0.0"
+          __author__ = "FRP Freedom Project"
+
+          from .android_app import main
+          EOF
+            echo "✅ __init__.py creado"
           fi
 
       - name: Debug Flet build process
@@ -327,12 +461,12 @@ jobs:
           print(f'Python version: {sys.version}')
           print(f'Current directory: {os.getcwd()}')
           print(f'Files in current directory: {os.listdir()}')
+          print(f'Files in frp_freedom_android: {os.listdir(\"frp_freedom_android\") if os.path.exists(\"frp_freedom_android\") else \"No existe\"}')
 
           # Intentar importar el módulo principal
           try:
               import main
               print('✅ main module imported successfully')
-              print(f'main attributes: {[attr for attr in dir(main) if not attr.startswith(\"_\")]}')
           except ImportError as e:
               print(f'❌ Could not import main: {e}')
               # Intentar importar desde la estructura alternativa
@@ -351,6 +485,7 @@ jobs:
           export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
           export FLET_VERBOSE=1
           export FLET_LOG_LEVEL=DEBUG
+          export FLET_ANDROID_BUILD=true
 
           echo "=== Environment ==="
           echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
@@ -378,46 +513,40 @@ jobs:
 
           # Limpiar construcciones anteriores
           echo "=== Limpiando construcciones anteriores ==="
-          rm -rf build/ dist/ .flet-build/
+          rm -rf build/ dist/ .flet-build/ android/
 
           # Verificar espacio en disco
           echo "=== Espacio en disco ==="
           df -h
 
-          # Crear un script de prueba para verificar el build
-          echo "=== Creando script de prueba ==="
-          cat > test_build.py << 'PYEOF'
-          #!/usr/bin/env python3
-          import subprocess
-          import sys
-          import os
+          # Verificar configuración de Flet
+          echo "=== Verificando configuración de Flet ==="
+          if [ -d ".flet" ]; then
+            echo "✅ .flet/ existe"
+            find .flet -type f -exec echo "   {}" \;
+          else
+            echo "⚠️ .flet/ no existe"
+          fi
 
-          def test_flet_build():
-              print("=== Probando construcción con flet ===")
-              cmd = [
-                  sys.executable, "-m", "flet", "build", "apk",
-                  "--build-number", "1",
-                  "--yes",
-                  "--verbose"
-              ]
-              print(f"Ejecutando: {' '.join(cmd)}")
-              result = subprocess.run(cmd, capture_output=False, text=True)
-              return result.returncode
+          if [ -f "flet_config.yaml" ]; then
+            echo "✅ flet_config.yaml existe"
+            cat flet_config.yaml
+          else
+            echo "⚠️ flet_config.yaml no existe"
+          fi
 
-          if __name__ == "__main__":
-              sys.exit(test_flet_build())
-          PYEOF
-
-          # Intentar construir con redirección de errores
+          # Intentar construir con opciones específicas
           echo "=== Iniciando construcción ==="
           echo "Comando: flet build apk --build-number ${{ github.run_number }} --yes --verbose"
 
-          # Ejecutar y capturar salida
+          # Ejecutar flet build con opciones adicionales
           set -x
           flet build apk \
             --build-number ${{ github.run_number }} \
             --yes \
-            --verbose 2>&1 | tee build_full.log
+            --verbose \
+            --android-sdk "$ANDROID_SDK_ROOT" \
+            2>&1 | tee build_full.log
 
           BUILD_EXIT_CODE=${PIPESTATUS[0]}
           set +x
@@ -429,14 +558,65 @@ jobs:
             echo "build_status=success" >> $GITHUB_OUTPUT
           else
             echo "❌ Error en la construcción (código: $BUILD_EXIT_CODE)"
-            echo "=== Últimas 100 líneas del log ==="
-            tail -100 build_full.log
-            echo ""
+            
+            # Buscar errores específicos en el log
             echo "=== Buscando errores específicos ==="
-            grep -i "error\|exception\|traceback\|failed" build_full.log | head -30 || echo "No se encontraron errores específicos"
-            echo ""
-            echo "=== Buscando advertencias ==="
-            grep -i "warning\|warn" build_full.log | head -20 || echo "No se encontraron advertencias"
+            grep -E "error|exception|failed|FAILED" build_full.log | head -30
+            
+            # Buscar específicamente el error de minSdk
+            echo "=== Buscando errores de minSdk ==="
+            grep -i "minsdk\|minsdkversion" build_full.log || echo "No se encontraron errores de minSdk"
+            
+            # Buscar errores de Gradle
+            echo "=== Buscando errores de Gradle ==="
+            grep -i "gradle" build_full.log | head -20 || echo "No se encontraron errores de Gradle"
+            
+            echo "build_status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Build APK in debug mode (fallback)
+        if: steps.build_apk.outputs.build_status == 'failed' || failure()
+        id: build_debug
+        run: |
+          echo "=== Intentando construir en modo debug (fallback) ==="
+          export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
+          export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
+          export FLET_VERBOSE=1
+          export FLET_LOG_LEVEL=DEBUG
+
+          # Crear configuración para debug
+          mkdir -p .flet
+          cat > .flet/properties << 'EOF'
+          android.minSdkVersion=21
+          android.targetSdkVersion=36
+          android.compileSdkVersion=36
+          android.ndkVersion=27.0.12077973
+          android.skipAndroidDeps=true
+          android.buildMode=debug
+          EOF
+
+          echo "✅ Configuración de debug creada"
+          cat .flet/properties
+
+          # Limpiar construcciones anteriores
+          rm -rf build/ dist/ .flet-build/ android/
+
+          # Construir en modo debug
+          echo "=== Construyendo en modo debug ==="
+          flet build apk \
+            --build-mode debug \
+            --build-number ${{ github.run_number }} \
+            --yes \
+            --verbose \
+            --android-sdk "$ANDROID_SDK_ROOT" \
+            2>&1 | tee build_debug.log
+
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo "✅ Construcción en modo debug exitosa"
+            echo "build_status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Construcción en modo debug falló"
             echo "build_status=failed" >> $GITHUB_OUTPUT
             exit 1
           fi
@@ -526,33 +706,29 @@ jobs:
           fi
 
       - name: Try alternative build methods if needed
-        if: steps.build_apk.outputs.build_status == 'failed' || failure()
+        if: steps.build_apk.outputs.build_status == 'failed' && steps.build_debug.outputs.build_status == 'failed'
         run: |
           echo "=== Intentando métodos alternativos de construcción ==="
 
-          # Intentar con --android-sdk explícito
-          echo "=== Método 1: Con --android-sdk explícito ==="
-          flet build apk \
-            --android-sdk "$ANDROID_SDK_ROOT" \
-            --build-number ${{ github.run_number }} \
-            --yes \
-            --verbose 2>&1 | tee build_alt1.log || true
-
-          # Intentar con build de debug
-          echo "=== Método 2: Build de debug ==="
-          flet build apk \
-            --build-mode debug \
-            --build-number ${{ github.run_number }} \
-            --yes \
-            --verbose 2>&1 | tee build_alt2.log || true
-
           # Intentar con --no-android-sdk-check
-          echo "=== Método 3: Sin verificación de SDK ==="
+          echo "=== Método 1: Sin verificación de SDK ==="
           export FLET_SKIP_ANDROID_SDK_CHECK=1
           flet build apk \
             --build-number ${{ github.run_number }} \
             --yes \
-            --verbose 2>&1 | tee build_alt3.log || true
+            --verbose \
+            --android-sdk "$ANDROID_SDK_ROOT" \
+            2>&1 | tee build_alt1.log || true
+
+          # Intentar con --min-sdk-version explícito
+          echo "=== Método 2: Con min-sdk-version explícito ==="
+          flet build apk \
+            --build-number ${{ github.run_number }} \
+            --yes \
+            --verbose \
+            --android-sdk "$ANDROID_SDK_ROOT" \
+            --min-sdk-version 21 \
+            2>&1 | tee build_alt2.log || true
 
       - name: Verify APK was created
         id: verify_apk
@@ -634,9 +810,9 @@ jobs:
               tail -50 build_full.log
             fi
             echo ""
-            echo "=== Últimas líneas del build.log ==="
-            if [ -f "build.log" ]; then
-              tail -50 build.log
+            echo "=== Últimas líneas del build_debug.log ==="
+            if [ -f "build_debug.log" ]; then
+              tail -50 build_debug.log
             fi
             echo "apk_exists=false" >> $GITHUB_OUTPUT
             exit 1
@@ -662,6 +838,7 @@ jobs:
           name: build-logs
           path: |
             build_full.log
+            build_debug.log
             build.log
             build_alt*.log
             *.log
@@ -700,6 +877,8 @@ jobs:
           echo "::error::   3. Asegúrate de que todas las dependencias están actualizadas"
           echo "::error::   4. Verifica la configuración de Android SDK"
           echo "::error::   5. Si el build genera AAB, se intentará convertir automáticamente"
+          echo "::error::   6. Revisa el artifact 'build-logs' para más detalles"
+          echo "::error::   7. Ejecuta 'flet build apk --verbose' localmente para ver el error exacto"
           exit 1
 
   test:
