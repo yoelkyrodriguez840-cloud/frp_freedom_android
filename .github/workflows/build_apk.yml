@@ -205,6 +205,17 @@ jobs:
           flutter-version: "3.19.6" # "3.24.5"
           channel: "stable"
           cache: true
+          clean: true
+
+      # - name: Clean Flutter and ensure correct PATH
+      #   run: |
+      #     # Eliminar otras versiones de Flutter si existen
+      #     rm -rf /home/runner/flutter/3.41.7 || true
+      #     rm -rf /opt/hostedtoolcache/flutter/stable-3.41.* || true
+      #
+      #     # Forzar el PATH correcto
+      #     echo "$(pwd)/flutter/bin" >> $GITHUB_PATH
+      #     export PATH="$(pwd)/flutter/bin:$PATH"
 
       - name: Verify Flutter installation
         run: |
@@ -293,7 +304,7 @@ jobs:
           cat > .flet/android/build.gradle << 'EOF'
           android {
               defaultConfig {
-                  minSdkVersion 21
+                  minSdkVersion 23
                   targetSdkVersion 36
               }
               compileSdkVersion 36
@@ -315,7 +326,7 @@ jobs:
           echo "=== Creando flet_config.yaml ==="
           cat > flet_config.yaml << 'EOF'
           android:
-            min_sdk_version: 21
+            min_sdk_version: 23
             target_sdk_version: 36
             compile_sdk_version: 36
             ndk_version: "27.0.12077973"
@@ -336,7 +347,7 @@ jobs:
           echo "=== Creando .flet/properties ==="
           mkdir -p .flet
           cat > .flet/properties << 'EOF'
-          android.minSdkVersion=21
+          android.minSdkVersion=23
           android.targetSdkVersion=36
           android.compileSdkVersion=36
           android.ndkVersion=27.0.12077973

@@ -1,6 +1,6 @@
 # Configuración de Flet para Android
 android:
-  min_sdk_version: 21
+  min_sdk_version: 23
   target_sdk_version: 36
   compile_sdk_version: 36
   build_tools_version: "36.0.0"

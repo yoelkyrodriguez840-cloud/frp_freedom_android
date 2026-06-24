@@ -59,7 +59,7 @@ asset_compression = true
 # Evitar instalar dependencias problemáticas
 skip_dependencies = ["jnius", "pyjnius", "kivy", "plyer"]
 # Versión mínima de Android
-min_sdk_version = 21
+min_sdk_version = 23
 target_sdk_version = 36
 
 # Configuración de Black (formateador de código)
