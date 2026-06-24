@@ -11,6 +11,7 @@ on:
     paths:
       - "frp_freedom_android/**"
   workflow_dispatch:
+    # Permite ejecución manual
 
 jobs:
   build:
@@ -19,15 +20,29 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Trae todo el historial para debug
 
-      - name: Debug - List directory structure
+      - name: Debug - Verify directory structure
         run: |
-          echo "Current directory: $(pwd)"
-          echo "All files:"
-          find . -maxdepth 3 -type d | sort
+          echo "=== Current working directory ==="
+          pwd
           echo ""
-          echo "Looking for frp_freedom_android:"
-          find . -name "frp_freedom_android" -type d
+          echo "=== Files in root directory ==="
+          ls -la
+          echo ""
+          echo "=== Checking for frp_freedom_android ==="
+          if [ -d "frp_freedom_android" ]; then
+            echo "✅ Directory found at: $(pwd)/frp_freedom_android"
+            echo ""
+            echo "=== Contents of frp_freedom_android ==="
+            ls -la frp_freedom_android/
+          else
+            echo "❌ Directory NOT found in $(pwd)"
+            echo "Searching in workspace..."
+            find ${{ github.workspace }} -name "frp_freedom_android" -type d 2>/dev/null || echo "Not found anywhere"
+            exit 1
+          fi
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -37,16 +52,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Verificar si existe el directorio
-          if [ -d "frp_freedom_android" ]; then
-            cd frp_freedom_android
-            pip install -r requirements.txt
-          else
+          # Verificar que el directorio existe antes de hacer cd
+          if [ ! -d "frp_freedom_android" ]; then
             echo "ERROR: frp_freedom_android directory not found!"
+            echo "Current directory: $(pwd)"
             echo "Available directories:"
             ls -la
             exit 1
           fi
+          cd frp_freedom_android
+          echo "Installing dependencies in: $(pwd)"
+          pip install -r requirements.txt
           pip install flet
 
       - name: Setup Java
@@ -71,23 +87,34 @@ jobs:
 
       - name: Build APK
         run: |
-          if [ -d "frp_freedom_android" ]; then
-            cd frp_freedom_android
-            python -m flet build apk \
-              --build-number ${{ github.run_number }} \
-              --version 1.0.${{ github.run_number }} \
-              --android-sdk $ANDROID_SDK_ROOT
-          else
+          if [ ! -d "frp_freedom_android" ]; then
             echo "ERROR: frp_freedom_android directory not found!"
+            echo "Current directory: $(pwd)"
             exit 1
           fi
+          cd frp_freedom_android
+          echo "Building APK in: $(pwd)"
+          python -m flet build apk \
+            --build-number ${{ github.run_number }} \
+            --version 1.0.${{ github.run_number }} \
+            --android-sdk $ANDROID_SDK_ROOT
 
       - name: Debug - List build output
         run: |
-          echo "Listing build directory:"
-          find . -path "*/build/*" -type f 2>/dev/null || echo "No build directory found"
-          echo "Listing APK files:"
-          find . -name "*.apk" 2>/dev/null || echo "No APK files found"
+          echo "=== Checking build output ==="
+          if [ -d "frp_freedom_android/build" ]; then
+            echo "Build directory exists at: $(pwd)/frp_freedom_android/build"
+            echo ""
+            echo "=== Build directory contents ==="
+            ls -la frp_freedom_android/build/
+            echo ""
+            echo "=== Looking for APK files ==="
+            find frp_freedom_android/build -name "*.apk" -ls 2>/dev/null || echo "No APK files found"
+          else
+            echo "Build directory not found at: $(pwd)/frp_freedom_android/build"
+            echo "Searching for build directory..."
+            find . -name "build" -type d 2>/dev/null || echo "No build directory found"
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -96,3 +123,112 @@ jobs:
           path: frp_freedom_android/build/**/*.apk
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Upload APK to release (optional)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frp-freedom-release
+          path: frp_freedom_android/build/**/*.apk
+          retention-days: 90
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Debug - Verify directory
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo ""
+          echo "=== Files in root ==="
+          ls -la
+          echo ""
+          echo "=== Checking frp_freedom_android ==="
+          if [ -d "frp_freedom_android" ]; then
+            echo "✅ Directory found"
+            ls -la frp_freedom_android/
+          else
+            echo "❌ Directory NOT found!"
+            exit 1
+          fi
+
+      - name: Install test dependencies
+        run: |
+          if [ ! -d "frp_freedom_android" ]; then
+            echo "ERROR: frp_freedom_android directory not found!"
+            exit 1
+          fi
+          cd frp_freedom_android
+          echo "Installing test dependencies in: $(pwd)"
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov
+
+      - name: Run tests
+        run: |
+          if [ ! -d "frp_freedom_android" ]; then
+            echo "ERROR: frp_freedom_android directory not found!"
+            exit 1
+          fi
+          cd frp_freedom_android
+          echo "Running tests in: $(pwd)"
+          python -m pytest tests/ -v --cov=. --cov-report=xml
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./frp_freedom_android/coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  # Job para verificar la compatibilidad con Android
+  android-compatibility:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: frp-freedom-android
+          path: apk/
+
+      - name: Analyze APK
+        run: |
+          echo "=== APK Analysis ==="
+          echo "APK Size:"
+          ls -la apk/
+          echo ""
+          echo "APK Contents:"
+          find apk/ -name "*.apk" -exec file {} \;
+          echo ""
+          echo "APK Info (if aapt available):"
+          if command -v aapt &> /dev/null; then
+            find apk/ -name "*.apk" -exec aapt dump badging {} \;
+          else
+            echo "aapt not available - installing..."
+            sudo apt-get install -y aapt
+            find apk/ -name "*.apk" -exec aapt dump badging {} \;
+          fi
