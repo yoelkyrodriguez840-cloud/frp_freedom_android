@@ -23,4 +23,4 @@ plyer>=2.1
 kivy>=2.2.0
 
 # Build
-flet>=0.21.0  # Para construir APK
+flet>=0.21.0
