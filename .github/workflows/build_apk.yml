@@ -68,7 +68,18 @@ jobs:
             unzip \
             wget \
             curl \
-            aapt
+            aapt \
+            default-jre \
+            default-jdk
+
+      - name: Install bundletool (for AAB conversion)
+        run: |
+          wget https://github.com/google/bundletool/releases/download/1.15.6/bundletool-all-1.15.6.jar
+          sudo mv bundletool-all-1.15.6.jar /usr/local/bin/bundletool.jar
+          echo '#!/bin/bash' | sudo tee /usr/local/bin/bundletool
+          echo 'java -jar /usr/local/bin/bundletool.jar "$@"' | sudo tee -a /usr/local/bin/bundletool
+          sudo chmod +x /usr/local/bin/bundletool
+          bundletool version || echo "bundletool installed"
 
       - name: Install dependencies
         run: |
@@ -310,20 +321,28 @@ jobs:
           echo "=== Limpiando construcciones anteriores ==="
           rm -rf build/ dist/ .flet-build/
 
+          # Verificar espacio en disco
+          echo "=== Espacio en disco ==="
+          df -h
+
           # Intentar construir con redirección de errores
           echo "=== Iniciando construcción ==="
-          set -e
+          echo "Comando: flet build apk --build-number ${{ github.run_number }} --yes --verbose"
+
+          # Ejecutar y capturar salida
           flet build apk \
             --build-number ${{ github.run_number }} \
             --yes \
             --verbose 2>&1 | tee build.log
 
-          # Verificar si la construcción fue exitosa
-          if [ $? -eq 0 ]; then
+          BUILD_EXIT_CODE=${PIPESTATUS[0]}
+          echo "Exit code: $BUILD_EXIT_CODE"
+
+          if [ $BUILD_EXIT_CODE -eq 0 ]; then
             echo "✅ Construcción exitosa"
             echo "build_status=success" >> $GITHUB_OUTPUT
           else
-            echo "❌ Error en la construcción"
+            echo "❌ Error en la construcción (código: $BUILD_EXIT_CODE)"
             echo "=== Últimas 100 líneas del log ==="
             tail -100 build.log
             echo ""
@@ -333,47 +352,200 @@ jobs:
             exit 1
           fi
 
+      - name: Debug build directory
+        run: |
+          echo "=== Debug: Contenido del directorio después del build ==="
+          echo "Directorio actual:"
+          ls -la
+          echo ""
+          echo "Buscando directorios de build:"
+          find . -type d -name "build" -o -name "dist" -o -name ".flet-build" | head -20
+          echo ""
+          echo "Buscando archivos .apk:"
+          find . -name "*.apk" -type f 2>/dev/null || echo "No se encontraron APK"
+          echo ""
+          echo "Buscando archivos .aab:"
+          find . -name "*.aab" -type f 2>/dev/null || echo "No se encontraron AAB"
+          echo ""
+          echo "Buscando archivos .apks:"
+          find . -name "*.apks" -type f 2>/dev/null || echo "No se encontraron APKS"
+          echo ""
+          echo "Contenido de .flet-build si existe:"
+          if [ -d ".flet-build" ]; then
+            ls -la .flet-build/
+          fi
+          echo ""
+          echo "Contenido de build si existe:"
+          if [ -d "build" ]; then
+            ls -la build/
+            if [ -d "build/app" ]; then
+              echo "Contenido de build/app:"
+              ls -la build/app/
+              if [ -d "build/app/outputs" ]; then
+                echo "Contenido de build/app/outputs:"
+                find build/app/outputs -type f | head -20
+              fi
+            fi
+          fi
+
+      - name: Check for AAB files and convert to APK
+        id: check_aab
+        run: |
+          echo "=== Buscando archivos AAB (Android App Bundle) ==="
+          AAB_FILES=$(find . -name "*.aab" -type f 2>/dev/null)
+          if [ -n "$AAB_FILES" ]; then
+            echo "✅ Se encontraron archivos AAB:"
+            echo "$AAB_FILES"
+            echo ""
+            echo "Intentando convertir AAB a APK..."
+            
+            # Crear directorio para APKs convertidos
+            mkdir -p converted_apks
+            
+            for aab in $AAB_FILES; do
+              echo "Convirtiendo $aab a APK..."
+              aab_name=$(basename "$aab" .aab)
+              
+              # Usar bundletool para convertir
+              bundletool build-apks \
+                --bundle="$aab" \
+                --output="converted_apks/${aab_name}.apks" \
+                --mode=universal
+              
+              # Extraer APK universal del archivo APKS
+              if [ -f "converted_apks/${aab_name}.apks" ]; then
+                echo "✅ APKS generado: converted_apks/${aab_name}.apks"
+                # Extraer el APK universal
+                unzip -p "converted_apks/${aab_name}.apks" "universal.apk" > "converted_apks/${aab_name}.apk" 2>/dev/null || \
+                unzip -p "converted_apks/${aab_name}.apks" "*.apk" > "converted_apks/${aab_name}.apk" 2>/dev/null
+                
+                if [ -f "converted_apks/${aab_name}.apk" ]; then
+                  echo "✅ APK convertido: converted_apks/${aab_name}.apk"
+                fi
+              fi
+            done
+            
+            # Mover APKs convertidos a la ubicación esperada
+            if [ -f "converted_apks/*.apk" ]; then
+              mkdir -p build/app/outputs/flutter-apk/
+              cp converted_apks/*.apk build/app/outputs/flutter-apk/ 2>/dev/null || true
+            fi
+          else
+            echo "❌ No se encontraron archivos AAB"
+          fi
+
+      - name: Try alternative build methods if needed
+        if: steps.build_apk.outputs.build_status == 'failed' || failure()
+        run: |
+          echo "=== Intentando métodos alternativos de construcción ==="
+
+          # Intentar con --android-sdk explícito
+          echo "=== Método 1: Con --android-sdk explícito ==="
+          flet build apk \
+            --android-sdk "$ANDROID_SDK_ROOT" \
+            --build-number ${{ github.run_number }} \
+            --yes \
+            --verbose 2>&1 | tee build_alt1.log || true
+
+          # Intentar con build de debug
+          echo "=== Método 2: Build de debug ==="
+          flet build apk \
+            --build-mode debug \
+            --build-number ${{ github.run_number }} \
+            --yes \
+            --verbose 2>&1 | tee build_alt2.log || true
+
+          # Intentar con --no-android-sdk-check
+          echo "=== Método 3: Sin verificación de SDK ==="
+          export FLET_SKIP_ANDROID_SDK_CHECK=1
+          flet build apk \
+            --build-number ${{ github.run_number }} \
+            --yes \
+            --verbose 2>&1 | tee build_alt3.log || true
+
       - name: Verify APK was created
         id: verify_apk
         run: |
           echo "=== Verificando que el APK fue creado ==="
 
           # Buscar archivos APK en todas las ubicaciones posibles
-          APK_FILES=$(find . -name "*.apk" -type f 2>/dev/null)
+          echo "Buscando en ubicaciones comunes..."
+
+          # Buscar en varias ubicaciones
+          APK_PATHS=(
+            "build/app/outputs/flutter-apk/*.apk"
+            "build/app/outputs/apk/**/*.apk"
+            "build/**/*.apk"
+            ".flet-build/**/*.apk"
+            "converted_apks/*.apk"
+            "*.apk"
+          )
+
+          APK_FILES=""
+          for pattern in "${APK_PATHS[@]}"; do
+            echo "Buscando: $pattern"
+            FOUND=$(find . -path "./$pattern" -type f 2>/dev/null || echo "")
+            if [ -n "$FOUND" ]; then
+              APK_FILES="$APK_FILES $FOUND"
+              echo "✅ Encontrado en $pattern"
+            fi
+          done
+
+          # Si no encuentra con find, buscar en todo el directorio
+          if [ -z "$APK_FILES" ]; then
+            echo "Buscando en todo el directorio..."
+            APK_FILES=$(find . -name "*.apk" -type f 2>/dev/null || echo "")
+          fi
 
           if [ -n "$APK_FILES" ]; then
             echo "✅ APK encontrado:"
-            echo "$APK_FILES"
+            echo "$APK_FILES" | tr ' ' '\n'
             echo ""
             echo "=== Información del APK ==="
             for apk in $APK_FILES; do
-              echo "Archivo: $apk"
-              ls -la "$apk"
-              echo "Tamaño: $(du -h "$apk" | cut -f1)"
-              if command -v aapt &> /dev/null; then
-                echo "Información del APK:"
-                aapt dump badging "$apk" | head -10
+              if [ -f "$apk" ]; then
+                echo "Archivo: $apk"
+                ls -la "$apk"
+                echo "Tamaño: $(du -h "$apk" | cut -f1)"
+                echo "Tipo de archivo: $(file "$apk")"
+                if command -v aapt &> /dev/null; then
+                  echo "Información del APK:"
+                  aapt dump badging "$apk" | head -10 || echo "No se pudo leer el APK"
+                fi
+                echo ""
               fi
-              echo ""
             done
             echo "apk_exists=true" >> $GITHUB_OUTPUT
           else
             echo "❌ CRÍTICO: No se encontró ningún archivo APK"
+            echo ""
+            echo "=== Análisis de directorios ==="
+            echo "Contenido del directorio actual:"
+            ls -la
+            echo ""
+            echo "Buscando cualquier archivo .apk en todo el sistema:"
+            find / -name "*.apk" -type f 2>/dev/null | head -20 || echo "No se encontraron APK"
+            echo ""
+            echo "Buscando archivos .aab (posiblemente generados en vez de APK):"
+            find . -name "*.aab" -type f 2>/dev/null || echo "No se encontraron AAB"
+            echo ""
+            echo "Buscando archivos .apks:"
+            find . -name "*.apks" -type f 2>/dev/null || echo "No se encontraron APKS"
+            echo ""
+            echo "Directorio de trabajo de Flutter:"
+            flutter --version
+            echo ""
+            echo "Proyectos Flutter en el directorio:"
+            find . -name "pubspec.yaml" -type f || echo "No se encontraron proyectos Flutter"
+            echo ""
+            echo "=== Últimas líneas del build.log ==="
+            if [ -f "build.log" ]; then
+              tail -50 build.log
+            fi
+            echo ""
             echo "apk_exists=false" >> $GITHUB_OUTPUT
             exit 1
           fi
-
-      - name: Debug - List build output (if APK not found)
-        if: steps.verify_apk.outputs.apk_exists == 'false'
-        run: |
-          echo "=== Buscando archivos APK en todo el sistema ==="
-          find / -name "*.apk" -type f 2>/dev/null | head -20 || echo "No se encontraron APK"
-          echo ""
-          echo "=== Directorios de construcción ==="
-          find . -type d -name "build" -o -name "dist" -o -name ".flet-build" | head -10
-          echo ""
-          echo "=== Contenido del directorio actual ==="
-          ls -laR | head -100
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -383,6 +555,7 @@ jobs:
             build/**/*.apk
             **/build/**/*.apk
             **/outputs/**/*.apk
+            converted_apks/*.apk
             *.apk
           if-no-files-found: ignore
           retention-days: 30
@@ -392,7 +565,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: build.log
+          path: |
+            build.log
+            build_alt*.log
           retention-days: 7
 
       - name: Upload APK to release (optional)
@@ -404,6 +579,7 @@ jobs:
             build/**/*.apk
             **/build/**/*.apk
             **/outputs/**/*.apk
+            converted_apks/*.apk
             *.apk
           retention-days: 90
 
@@ -419,6 +595,14 @@ jobs:
           echo "::error::   - Flet está configurado correctamente"
           echo "::error::   - Hay suficiente espacio en disco"
           echo "::error::   - Los permisos de Android están configurados"
+          echo "::error::   - El archivo main.py existe y es accesible"
+          echo "::error::   - El SDK de Android está correctamente configurado"
+          echo "::error::🔧 Acciones recomendadas:"
+          echo "::error::   1. Revisa el archivo build.log en los artifacts"
+          echo "::error::   2. Verifica que el código compile localmente con 'flet build apk'"
+          echo "::error::   3. Asegúrate de que todas las dependencias están actualizadas"
+          echo "::error::   4. Verifica la configuración de Android SDK"
+          echo "::error::   5. Si el build genera AAB, se intentará convertir automáticamente"
           exit 1
 
   test:
@@ -492,6 +676,16 @@ jobs:
               console.log('❌ Artifact not found');
               core.setOutput('exists', 'false');
             }
+
+      - name: Install aapt and bundletool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aapt unzip
+          wget https://github.com/google/bundletool/releases/download/1.15.6/bundletool-all-1.15.6.jar
+          sudo mv bundletool-all-1.15.6.jar /usr/local/bin/bundletool.jar
+          echo '#!/bin/bash' | sudo tee /usr/local/bin/bundletool
+          echo 'java -jar /usr/local/bin/bundletool.jar "$@"' | sudo tee -a /usr/local/bin/bundletool
+          sudo chmod +x /usr/local/bin/bundletool
 
       - name: Download APK
         if: steps.check_artifact.outputs.exists == 'true'
@@ -577,4 +771,5 @@ jobs:
           echo "::error::  2. Verifica que el código compile localmente"
           echo "::error::  3. Asegúrate de que todas las dependencias están actualizadas"
           echo "::error::  4. Verifica la configuración de Android SDK"
+          echo "::error::  5. Revisa el artifact 'build-log' para más detalles"
           exit 1
