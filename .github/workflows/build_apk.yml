@@ -1,7 +1,5 @@
 name: Build Android APK
 
-# contruccion dwl flujo de trabaho para contruir la apk
-
 on:
   push:
     branches: [main, develop]
@@ -33,10 +31,10 @@ jobs:
           ls -la
           echo ""
           echo "=== Checking for required files ==="
-          if [ -f "main.py" ]; then
-            echo "✅ main.py found in root"
+          if [ -f "main.py" ] || [ -f "frp_freedom_android/android_app.py" ]; then
+            echo "✅ Main application file found"
           else
-            echo "❌ main.py NOT found in root!"
+            echo "❌ No main application file found!"
             exit 1
           fi
           if [ -f "requirements.txt" ]; then
@@ -62,14 +60,17 @@ jobs:
           echo "Installing dependencies in: $(pwd)"
           pip install --upgrade pip
 
+          # Eliminar cualquier referencia a jnius en requirements.txt
+          if grep -q "jnius" requirements.txt; then
+            echo "⚠️ Eliminando jnius de requirements.txt"
+            sed -i '/jnius/d' requirements.txt
+          fi
+
           # Instalar dependencias desde requirements.txt
           pip install -r requirements.txt
 
           # Verificar instalación de flet
           python -c "import flet; print(f'Flet version: {flet.__version__}')"
-
-          # Verificar que watchdog esté instalado (dependencia de flet)
-          python -c "import watchdog; print('watchdog installed')" 2>/dev/null || echo "watchdog not found (but it's fine)"
 
       - name: Verify flet installation
         run: |
@@ -110,7 +111,7 @@ jobs:
           # Crear estructura de directorios para Android SDK
           mkdir -p android-sdk/cmdline-tools
 
-          # Descargar command line tools (versión más reciente)
+          # Descargar command line tools
           wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
 
           # Extraer en una ubicación temporal
@@ -143,15 +144,12 @@ jobs:
           yes | sdkmanager --licenses || true
 
           # Instalar las versiones correctas de Android SDK
-          # Flutter 3.24.5 requiere Android SDK 36 y build-tools 28.0.3 o superiores
           sdkmanager "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0" \
             "build-tools;34.0.0" \
-            "platforms;android-34"
-
-          # También instalar versiones adicionales para compatibilidad
-          sdkmanager "platforms;android-33" \
+            "platforms;android-34" \
+            "platforms;android-33" \
             "build-tools;33.0.2" \
             "platforms;android-35"
 
@@ -161,12 +159,29 @@ jobs:
           flutter config --android-sdk $ANDROID_SDK_ROOT
           yes | flutter doctor --android-licenses || true
 
-      - name: Create .fletignore file to exclude problematic dependencies
+      - name: Create .fletignore file
         run: |
           echo "# Exclude jnius and other problematic dependencies" > .fletignore
           echo "**/jnius*" >> .fletignore
           echo "**/pyjnius*" >> .fletignore
           echo "**/kivy*" >> .fletignore
+          echo "**/build/*" >> .fletignore
+
+      - name: Create Flet config to skip Android dependencies
+        run: |
+          mkdir -p .flet
+          cat > .flet/config.json << 'EOF'
+          {
+            "android": {
+              "dependencies": {
+                "skip": ["jnius", "pyjnius", "kivy"]
+              }
+            },
+            "build": {
+              "skip_android_deps": true
+            }
+          }
+          EOF
 
       - name: Build APK
         run: |
@@ -179,7 +194,11 @@ jobs:
           # Verificar que las dependencias de Android estén instaladas
           flutter doctor -v
 
-          # Comando con opciones adicionales para evitar problemas
+          # Verificar que jnius no esté instalado
+          echo "=== Verificando que jnius no esté instalado ==="
+          pip list | grep -i jnius || echo "✅ jnius no encontrado"
+
+          # Construir la APK
           flet build apk \
             --build-number ${{ github.run_number }} \
             --yes \
