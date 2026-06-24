@@ -111,11 +111,8 @@ jobs:
         run: |
           echo "Building APK in: $(pwd)"
           echo "Using Android SDK at: $ANDROID_SDK_ROOT"
-          # Usar el comando flet directamente (no python -m flet)
-          flet build apk \
-            --build-number ${{ github.run_number }} \
-            --version 1.0.${{ github.run_number }} \
-            --android-sdk $ANDROID_SDK_ROOT
+          # Comando correcto para flet build apk
+          flet build apk --build-number ${{ github.run_number }}
 
       - name: Debug - List build output
         run: |
