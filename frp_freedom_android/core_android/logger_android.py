@@ -6,7 +6,7 @@ import logging
 import json
 import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import List, Dict, Any, Optional
 from cryptography.fernet import Fernet
 
 from ..adapters.filesystem_adapter import FilesystemAdapter
