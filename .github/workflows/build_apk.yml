@@ -54,7 +54,8 @@ jobs:
         run: |
           echo "Installing dependencies in: $(pwd)"
           pip install -r requirements.txt
-          pip install flet
+          # Instalar flet con soporte para Android
+          pip install flet[android]
 
       - name: Verify flet installation
         run: |
@@ -126,17 +127,26 @@ jobs:
           yes | sdkmanager --licenses
           yes | sdkmanager --licenses || true
 
+      - name: Accept Flutter Android Licenses
+        run: |
+          # Aceptar licencias específicas de Flutter para Android
+          flutter config --android-sdk $ANDROID_SDK_ROOT
+          yes | flutter doctor --android-licenses || true
+
       - name: Build APK
         run: |
           echo "Building APK in: $(pwd)"
           echo "Using Android SDK at: $ANDROID_SDK_ROOT"
           echo "Using Flutter at: $(which flutter)"
 
-          # Forzar la instalación silenciosa de Flutter SDK si es necesario
-          export FLUTTER_ROOT=$(flutter --version | head -1 | grep -oP 'Flutter \K[^ ]+' || echo "")
+          # Verificar que las dependencias de Android estén instaladas
+          flutter doctor -v
 
-          # Comando correcto para flet build apk con --yes para evitar prompts
-          flet build apk --build-number ${{ github.run_number }} --yes
+          # Comando con opciones adicionales para evitar problemas
+          flet build apk \
+            --build-number ${{ github.run_number }} \
+            --yes \
+            --verbose
 
       - name: Debug - List build output
         run: |
