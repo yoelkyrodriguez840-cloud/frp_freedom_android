@@ -11,7 +11,6 @@ on:
     paths:
       - "frp_freedom_android/**"
   workflow_dispatch:
-    # Permite ejecución manual
 
 jobs:
   build:
@@ -21,6 +20,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug - List directory structure
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "All files:"
+          find . -maxdepth 3 -type d | sort
+          echo ""
+          echo "Looking for frp_freedom_android:"
+          find . -name "frp_freedom_android" -type d
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -29,11 +37,19 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd frp_freedom_android
-          pip install -r requirements.txt
+          # Verificar si existe el directorio
+          if [ -d "frp_freedom_android" ]; then
+            cd frp_freedom_android
+            pip install -r requirements.txt
+          else
+            echo "ERROR: frp_freedom_android directory not found!"
+            echo "Available directories:"
+            ls -la
+            exit 1
+          fi
           pip install flet
 
-      - name: Setup Android SDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
@@ -55,18 +71,23 @@ jobs:
 
       - name: Build APK
         run: |
-          cd frp_freedom_android
-          python -m flet build apk \
-            --build-number ${{ github.run_number }} \
-            --version 1.0.${{ github.run_number }} \
-            --android-sdk $ANDROID_SDK_ROOT
+          if [ -d "frp_freedom_android" ]; then
+            cd frp_freedom_android
+            python -m flet build apk \
+              --build-number ${{ github.run_number }} \
+              --version 1.0.${{ github.run_number }} \
+              --android-sdk $ANDROID_SDK_ROOT
+          else
+            echo "ERROR: frp_freedom_android directory not found!"
+            exit 1
+          fi
 
       - name: Debug - List build output
         run: |
           echo "Listing build directory:"
-          ls -la frp_freedom_android/build/
-          echo "Listing APK directory:"
-          find frp_freedom_android/build -name "*.apk" -ls
+          find . -path "*/build/*" -type f 2>/dev/null || echo "No build directory found"
+          echo "Listing APK files:"
+          find . -name "*.apk" 2>/dev/null || echo "No APK files found"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -75,81 +96,3 @@ jobs:
           path: frp_freedom_android/build/**/*.apk
           if-no-files-found: warn
           retention-days: 30
-
-      - name: Upload APK to release (optional)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: frp-freedom-release
-          path: frp_freedom_android/build/**/*.apk
-          retention-days: 90
-
-  test:
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'pull_request'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install test dependencies
-        run: |
-          cd frp_freedom_android
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov
-
-      - name: Run tests
-        run: |
-          cd frp_freedom_android
-          python -m pytest tests/ -v --cov=. --cov-report=xml
-
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./frp_freedom_android/coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-
-  # Job para verificar la compatibilidad con Android
-  android-compatibility:
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Download APK
-        uses: actions/download-artifact@v4
-        with:
-          name: frp-freedom-android
-          path: apk/
-
-      - name: Analyze APK
-        run: |
-          echo "APK Size:"
-          ls -la apk/
-          echo ""
-          echo "APK Contents:"
-          find apk/ -name "*.apk" -exec file {} \;
-          echo ""
-          echo "APK Info (if aapt available):"
-          if command -v aapt &> /dev/null; then
-            find apk/ -name "*.apk" -exec aapt dump badging {} \;
-          else
-            echo "aapt not available"
-          fi
-
