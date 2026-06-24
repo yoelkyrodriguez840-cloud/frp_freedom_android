@@ -67,7 +67,8 @@ jobs:
             mesa-utils \
             unzip \
             wget \
-            curl
+            curl \
+            aapt
 
       - name: Install dependencies
         run: |
@@ -250,6 +251,7 @@ jobs:
           flet build apk --dry-run --yes --verbose || echo "❌ Dry run failed"
 
       - name: Build APK with detailed logging
+        id: build_apk
         run: |
           echo "Building APK in: $(pwd)"
           export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
@@ -319,6 +321,7 @@ jobs:
           # Verificar si la construcción fue exitosa
           if [ $? -eq 0 ]; then
             echo "✅ Construcción exitosa"
+            echo "build_status=success" >> $GITHUB_OUTPUT
           else
             echo "❌ Error en la construcción"
             echo "=== Últimas 100 líneas del log ==="
@@ -326,38 +329,62 @@ jobs:
             echo ""
             echo "=== Buscando errores específicos ==="
             grep -i "error\|exception\|traceback" build.log | head -20
+            echo "build_status=failed" >> $GITHUB_OUTPUT
             exit 1
           fi
 
-      - name: Debug - List build output
+      - name: Verify APK was created
+        id: verify_apk
         run: |
-          echo "=== Checking build output ==="
-          echo "Current directory: $(pwd)"
-          echo ""
-          echo "=== Directory contents ==="
-          ls -la
-          echo ""
-          echo "=== Looking for build directory ==="
-          if [ -d "build" ]; then
-            echo "✅ Build directory found"
+          echo "=== Verificando que el APK fue creado ==="
+
+          # Buscar archivos APK en todas las ubicaciones posibles
+          APK_FILES=$(find . -name "*.apk" -type f 2>/dev/null)
+
+          if [ -n "$APK_FILES" ]; then
+            echo "✅ APK encontrado:"
+            echo "$APK_FILES"
             echo ""
-            echo "=== Build directory contents ==="
-            ls -la build/
-            echo ""
-            echo "=== Looking for APK files ==="
-            find build -name "*.apk" -type f 2>/dev/null || echo "No APK files found in build"
+            echo "=== Información del APK ==="
+            for apk in $APK_FILES; do
+              echo "Archivo: $apk"
+              ls -la "$apk"
+              echo "Tamaño: $(du -h "$apk" | cut -f1)"
+              if command -v aapt &> /dev/null; then
+                echo "Información del APK:"
+                aapt dump badging "$apk" | head -10
+              fi
+              echo ""
+            done
+            echo "apk_exists=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ Build directory not found"
-            echo "Searching for any APK files..."
-            find . -name "*.apk" -type f 2>/dev/null || echo "No APK files found anywhere"
+            echo "❌ CRÍTICO: No se encontró ningún archivo APK"
+            echo "apk_exists=false" >> $GITHUB_OUTPUT
+            exit 1
           fi
+
+      - name: Debug - List build output (if APK not found)
+        if: steps.verify_apk.outputs.apk_exists == 'false'
+        run: |
+          echo "=== Buscando archivos APK en todo el sistema ==="
+          find / -name "*.apk" -type f 2>/dev/null | head -20 || echo "No se encontraron APK"
+          echo ""
+          echo "=== Directorios de construcción ==="
+          find . -type d -name "build" -o -name "dist" -o -name ".flet-build" | head -10
+          echo ""
+          echo "=== Contenido del directorio actual ==="
+          ls -laR | head -100
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: frp-freedom-android
-          path: build/**/*.apk
-          if-no-files-found: warn
+          path: |
+            build/**/*.apk
+            **/build/**/*.apk
+            **/outputs/**/*.apk
+            *.apk
+          if-no-files-found: ignore
           retention-days: 30
 
       - name: Upload build log (for debugging)
@@ -369,12 +396,30 @@ jobs:
           retention-days: 7
 
       - name: Upload APK to release (optional)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify_apk.outputs.apk_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: frp-freedom-release
-          path: build/**/*.apk
+          path: |
+            build/**/*.apk
+            **/build/**/*.apk
+            **/outputs/**/*.apk
+            *.apk
           retention-days: 90
+
+      - name: Critical error - APK not created
+        if: steps.verify_apk.outputs.apk_exists == 'false' || failure()
+        run: |
+          echo "::error::🚨 ERROR CRÍTICO: El APK no fue creado correctamente"
+          echo "::error::📱 La aplicación no pudo ser compilada para Android"
+          echo "::error::🔍 Por favor, revisa los logs anteriores para identificar el problema"
+          echo "::error::💡 Asegúrate de que:"
+          echo "::error::   - El código fuente es correcto"
+          echo "::error::   - Todas las dependencias están instaladas"
+          echo "::error::   - Flet está configurado correctamente"
+          echo "::error::   - Hay suficiente espacio en disco"
+          echo "::error::   - Los permisos de Android están configurados"
+          exit 1
 
   test:
     runs-on: ubuntu-latest
@@ -421,54 +466,115 @@ jobs:
   android-compatibility:
     runs-on: ubuntu-latest
     needs: build
-    # Opción 2: Solo ejecutar si build fue exitoso y no es un pull request
     if: github.event_name != 'pull_request' && needs.build.result == 'success'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Check if artifact exists
+        id: check_artifact
+        uses: actions/github-script@v7
         with:
-          python-version: "3.11"
-
-      - name: Check if build was successful
-        id: check_build
-        run: |
-          if [ "${{ needs.build.result }}" != "success" ]; then
-            echo "❌ Build failed, skipping compatibility check"
-            echo "skip=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          script: |
+            const { data: artifacts } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId,
+            });
+            const artifact = artifacts.artifacts.find(a => a.name === 'frp-freedom-android');
+            if (artifact) {
+              console.log('✅ Artifact found');
+              core.setOutput('exists', 'true');
+              core.setOutput('size', artifact.size_in_bytes);
+              core.setOutput('created', artifact.created_at);
+            } else {
+              console.log('❌ Artifact not found');
+              core.setOutput('exists', 'false');
+            }
 
       - name: Download APK
-        if: steps.check_build.outputs.skip != 'true'
+        if: steps.check_artifact.outputs.exists == 'true'
         uses: actions/download-artifact@v4
         with:
           name: frp-freedom-android
           path: apk/
-          # Si no encuentra el artifact, no falla (gracias a la condición del job)
+          continue-on-error: false
 
       - name: Analyze APK
+        if: steps.check_artifact.outputs.exists == 'true'
         run: |
-          echo "=== APK Analysis ==="
-          if [ -d "apk" ] && [ "$(ls -A apk/ 2>/dev/null)" ]; then
-            echo "APK Size:"
-            ls -la apk/
+          echo "=== Análisis del APK ==="
+          echo "✅ APK encontrado para análisis"
+
+          # Buscar todos los APK descargados
+          APK_FILES=$(find apk/ -name "*.apk" -type f 2>/dev/null)
+
+          if [ -n "$APK_FILES" ]; then
             echo ""
-            echo "APK Contents:"
-            find apk/ -name "*.apk" -exec file {} \;
+            echo "=== Archivos APK encontrados ==="
+            echo "$APK_FILES"
             echo ""
-            echo "APK Info:"
-            if command -v aapt &> /dev/null; then
-              find apk/ -name "*.apk" -exec aapt dump badging {} \;
-            else
-              echo "aapt not available - installing..."
-              sudo apt-get update && sudo apt-get install -y aapt
-              find apk/ -name "*.apk" -exec aapt dump badging {} \;
-            fi
+            
+            for apk in $APK_FILES; do
+              echo "=== Información del APK: $(basename $apk) ==="
+              echo "Tamaño: $(du -h "$apk" | cut -f1)"
+              echo "Ubicación: $apk"
+              echo ""
+              
+              if command -v aapt &> /dev/null; then
+                echo "Información detallada del APK:"
+                aapt dump badging "$apk" || echo "⚠️ No se pudo leer la información del APK"
+                echo ""
+              fi
+              
+              echo "Estructura del APK:"
+              unzip -l "$apk" | head -20 || echo "⚠️ No se pudo listar el contenido del APK"
+              echo ""
+            done
           else
-            echo "⚠️ No APK found to analyze - skipping analysis"
-            echo "This is expected if the build generated no APK or the artifact wasn't uploaded."
+            echo "❌ No se encontraron archivos APK para analizar"
+            exit 1
           fi
+
+      - name: Report missing artifact
+        if: steps.check_artifact.outputs.exists == 'false'
+        run: |
+          echo "::warning::⚠️ No se encontró el artifact frp-freedom-android para analizar"
+          echo "::warning::📱 Esto puede deberse a que:"
+          echo "::warning::   - El job 'build' falló o se saltó"
+          echo "::warning::   - El APK no se generó correctamente"
+          echo "::warning::   - El artifact expiró o fue eliminado"
+          echo "::warning::🔍 Revisa los logs del job 'build' para más información"
+
+      - name: Compatibility check summary
+        if: always()
+        run: |
+          echo "=== Resumen de compatibilidad Android ==="
+          if [ "${{ steps.check_artifact.outputs.exists }}" == "true" ]; then
+            echo "✅ APK disponible para análisis"
+            echo "📱 El APK puede ser probado en dispositivos Android"
+          else
+            echo "❌ No hay APK disponible para análisis"
+            echo "🔧 Se requiere revisar el proceso de construcción"
+          fi
+
+  notify-failure:
+    runs-on: ubuntu-latest
+    needs: [build, test, android-compatibility]
+    if: failure()
+
+    steps:
+      - name: Notify about build failure
+        run: |
+          echo "::error::🚨 EL WORKFLOW HA FALLADO"
+          echo "::error::📋 Revisa los siguientes jobs:"
+          echo "::error::  - Build: ${{ needs.build.result }}"
+          echo "::error::  - Test: ${{ needs.test.result }}"
+          echo "::error::  - Android Compatibility: ${{ needs.android-compatibility.result }}"
+          echo "::error::🔧 Acciones recomendadas:"
+          echo "::error::  1. Revisa los logs de error"
+          echo "::error::  2. Verifica que el código compile localmente"
+          echo "::error::  3. Asegúrate de que todas las dependencias están actualizadas"
+          echo "::error::  4. Verifica la configuración de Android SDK"
+          exit 1
