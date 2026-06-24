@@ -2,13 +2,14 @@
 
 # Core Framework
 flet>=0.21.0
-jnius>=1.1.0
+# jnius>=1.1.0
 pyyaml>=6.0
 # cryptography>=41.0.0
 
 # Utils
 requests>=2.31.0
 urllib3>=2.0.0
+msgpack<=1.1.1
 
 # Development
 black>=23.7.0

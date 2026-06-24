@@ -18,6 +18,19 @@ from .views.methods_view import MethodsView
 from .views.execution_view import ExecutionView
 from .views.results_view import ResultsView
 
+# En android_app.py
+from pathlib import Path
+
+ASSETS_DIR = Path(__file__).parent / "assets"
+ICON_PATH = ASSETS_DIR / "icon.png"
+SPLASH_PATH = ASSETS_DIR / "splash.png"
+
+
+# Usar en la aplicación
+def init(self, page: ft.Page):
+    # Configurar icono
+    # ... resto del código
+
 
 class FRPFreedomApp:
     """Aplicación principal FRP Freedom para Android"""
@@ -47,6 +60,7 @@ class FRPFreedomApp:
     async def init(self, page: ft.Page):
         """Inicializar la aplicación"""
         self.page = page
+        page.icon = str(ICON_PATH)
 
         # Configuración de la página
         page.title = "FRP Freedom"
