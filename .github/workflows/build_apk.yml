@@ -60,7 +60,7 @@ jobs:
             ls -la
             exit 1
           fi
-          cd frp_freedom_android
+          # cd frp_freedom_android
           echo "Installing dependencies in: $(pwd)"
           pip install -r requirements.txt
           pip install flet
@@ -92,7 +92,7 @@ jobs:
             echo "Current directory: $(pwd)"
             exit 1
           fi
-          cd frp_freedom_android
+          # cd frp_freedom_android
           echo "Building APK in: $(pwd)"
           python -m flet build apk \
             --build-number ${{ github.run_number }} \
@@ -172,7 +172,7 @@ jobs:
             echo "ERROR: frp_freedom_android directory not found!"
             exit 1
           fi
-          cd frp_freedom_android
+          # cd frp_freedom_android
           echo "Installing test dependencies in: $(pwd)"
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov
@@ -183,7 +183,7 @@ jobs:
             echo "ERROR: frp_freedom_android directory not found!"
             exit 1
           fi
-          cd frp_freedom_android
+          # cd frp_freedom_android
           echo "Running tests in: $(pwd)"
           python -m pytest tests/ -v --cov=. --cov-report=xml
 
