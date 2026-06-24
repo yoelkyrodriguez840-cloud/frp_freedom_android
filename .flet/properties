@@ -1,0 +1,3 @@
+android.minSdkVersion=21
+android.targetSdkVersion=34
+android.compileSdkVersion=34
