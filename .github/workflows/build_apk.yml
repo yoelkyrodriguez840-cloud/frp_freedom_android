@@ -56,6 +56,13 @@ jobs:
           pip install -r requirements.txt
           pip install flet
 
+      - name: Verify flet installation
+        run: |
+          echo "=== Verifying flet installation ==="
+          python -c "import flet; print(f'Flet version: {flet.__version__}')"
+          which flet || echo "flet not in PATH"
+          flet --version || echo "flet command not available"
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -103,7 +110,9 @@ jobs:
       - name: Build APK
         run: |
           echo "Building APK in: $(pwd)"
-          python -m flet build apk \
+          echo "Using Android SDK at: $ANDROID_SDK_ROOT"
+          # Usar el comando flet directamente (no python -m flet)
+          flet build apk \
             --build-number ${{ github.run_number }} \
             --version 1.0.${{ github.run_number }} \
             --android-sdk $ANDROID_SDK_ROOT
