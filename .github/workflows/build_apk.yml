@@ -202,20 +202,10 @@ jobs:
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.19.6" # "3.24.5"
+          flutter-version: "3.19.6"
           channel: "stable"
           cache: true
-          clean: true
-
-      # - name: Clean Flutter and ensure correct PATH
-      #   run: |
-      #     # Eliminar otras versiones de Flutter si existen
-      #     rm -rf /home/runner/flutter/3.41.7 || true
-      #     rm -rf /opt/hostedtoolcache/flutter/stable-3.41.* || true
-      #
-      #     # Forzar el PATH correcto
-      #     echo "$(pwd)/flutter/bin" >> $GITHUB_PATH
-      #     export PATH="$(pwd)/flutter/bin:$PATH"
+          # NOTA: 'clean' ha sido removido porque no es un input válido
 
       - name: Verify Flutter installation
         run: |
@@ -886,6 +876,34 @@ jobs:
             exit 1
           fi
 
+      - name: Compress project directory as tar.gz
+        if: always()
+        run: |
+          echo "=== Comprimiendo la carpeta del proyecto frp-freedom-android ==="
+
+          # Verificar que el directorio existe
+          if [ -d "frp_freedom_android" ]; then
+            echo "✅ Directorio frp_freedom_android encontrado"
+            
+            # Crear archivo tar.gz con timestamp
+            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+            FILENAME="frp-freedom-android-project_${TIMESTAMP}.tar.gz"
+            
+            echo "Comprimiendo..."
+            tar -czf "$FILENAME" frp_freedom_android/
+            
+            if [ -f "$FILENAME" ]; then
+              echo "✅ Compresión completada: $FILENAME"
+              echo "Tamaño: $(du -h "$FILENAME" | cut -f1)"
+              ls -la "$FILENAME"
+            else
+              echo "❌ Error al crear el archivo comprimido"
+              exit 1
+            fi
+          else
+            echo "⚠️ Directorio frp_freedom_android no encontrado, omitiendo compresión"
+          fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -896,6 +914,14 @@ jobs:
             **/outputs/**/*.apk
             converted_apks/*.apk
             *.apk
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload project source code artifact (compressed)
+        uses: actions/upload-artifact@v4
+        with:
+          name: frp-freedom-project-source
+          path: frp-freedom-android-project_*.tar.gz
           if-no-files-found: ignore
           retention-days: 30
 
@@ -1037,7 +1063,7 @@ jobs:
         with:
           name: frp-freedom-android
           path: apk/
-          continue-on-error: false
+          # NOTA: 'continue-on-error' ha sido removido porque no es un input válido
 
       - name: Analyze APK
         if: steps.check_artifact.outputs.exists == 'true'
