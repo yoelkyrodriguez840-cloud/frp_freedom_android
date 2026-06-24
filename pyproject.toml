@@ -4,17 +4,18 @@ version = "1.0.0"
 description = "FRP Freedom - Android APK for FRP Bypass"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
-authors = [
-    {name = "FRP Freedom Project"}
-]
+license = { text = "MIT" }
+authors = [{ name = "FRP Freedom Project" }]
 dependencies = [
-    "flet>=0.21.0",
-    "jnius>=1.1.0",
-    "pyyaml>=6.0",
-    "cryptography>=41.0.0",
-    "requests>=2.31.0",
+  "flet>=0.21.0",
+  "jnius>=1.1.0",
+  "pyyaml>=6.0",
+  "cryptography>=41.0.0",
+  "requests>=2.31.0",
 ]
+
+[tool.uv.extra-build-dependencies]
+jnius = ["Cython"]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

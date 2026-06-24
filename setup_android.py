@@ -3,43 +3,69 @@
 Setup script for FRP Freedom Android
 """
 
-from setuptools import setup, find_packages
+import subprocess
+import sys
+import os
+from pathlib import Path
 
-with open("README.md", "r", encoding="utf-8") as fh:
-    long_description = fh.read()
 
-setup(
-    name="frp-freedom-android",
-    version="1.0.0",
-    author="FRP Freedom Project",
-    description="FRP Freedom - Android APK for FRP Bypass",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    url="https://github.com/frp-freedom/frp-freedom-android",
-    packages=find_packages(),
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
-        "Operating System :: OS Independent",
-        "Development Status :: 4 - Beta",
-        "Intended Audience :: Developers",
-        "Topic :: Software Development :: Libraries :: Python Modules",
-    ],
-    python_requires=">=3.9",
-    install_requires=[
-        "flet>=0.21.0",
-        "jnius>=1.1.0",
-        "pyyaml>=6.0",
-        "cryptography>=41.0.0",
-        "requests>=2.31.0",
-    ],
-    entry_points={
-        "console_scripts": [
-            "frp-freedom=frp_freedom_android.android_app:main",
-        ],
-    },
-    include_package_data=True,
-    package_data={
-        "frp_freedom_android": ["assets/*", "assets/*/*"],
-    },
-)
+def install_dependencies():
+    """Instalar dependencias"""
+    print("Instalando dependencias...")
+
+    deps = ["flet", "jnius", "pyyaml"]  # , "cryptography"]
+
+    for dep in deps:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", dep])
+
+    print("Dependencias instaladas correctamente.")
+
+
+def build_apk():
+    """Construir APK"""
+    print("Construyendo APK...")
+
+    # Crear directorio build
+    build_dir = Path("build")
+    build_dir.mkdir(exist_ok=True)
+
+    # Ejecutar flet build
+    cmd = [
+        sys.executable,
+        "-m",
+        "flet",
+        "build",
+        "apk",
+        "--build-number",
+        "1",
+        "--version",
+        "1.0.0",
+    ]
+
+    try:
+        subprocess.check_call(cmd)
+        print("APK construida correctamente.")
+        print(f"APK ubicación: {build_dir}/app-release.apk")
+    except subprocess.CalledProcessError as e:
+        print(f"Error construyendo APK: {e}")
+        sys.exit(1)
+
+
+def main():
+    """Script principal"""
+    print("FRP Freedom Android - Setup")
+    print("=" * 40)
+
+    # Instalar dependencias
+    install_dependencies()
+
+    # Construir APK
+    build_apk()
+
+    print("\n¡Setup completado!")
+    print("Para instalar la APK en tu dispositivo:")
+    print("  adb install build/app-release.apk")
+
+
+if __name__ == "__main__":
+    main()
