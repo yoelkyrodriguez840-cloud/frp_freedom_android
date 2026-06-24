@@ -2,7 +2,7 @@
 
 # Core Framework
 flet>=0.21.0
-jnius>=1.1.0
+# jnius>=1.1.0
 pyyaml>=6.0
 cryptography>=41.0.0
 
@@ -18,9 +18,9 @@ pytest>=7.4.0
 pytest-asyncio>=0.21.0
 
 # Android Specific (opcional, para funcionalidades avanzadas)
-pyjnius>=1.5.0
-plyer>=2.1
-kivy>=2.2.0
+# pyjnius>=1.5.0
+# plyer>=2.1
+# kivy>=2.2.0
 
 # Build
 flet>=0.21.0  # Para construir APK

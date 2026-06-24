@@ -52,10 +52,21 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3-dev
+
       - name: Install dependencies
         run: |
           echo "Installing dependencies in: $(pwd)"
+
+          # Instalar Cython primero (necesario para compilar algunas dependencias)
+          pip install cython
+
+          # Instalar dependencias principales
           pip install -r requirements.txt
+
           # Instalar flet con soporte para Android
           pip install flet[android]
 
@@ -225,6 +236,8 @@ jobs:
       - name: Install test dependencies
         run: |
           echo "Installing test dependencies in: $(pwd)"
+          # Instalar Cython primero
+          pip install cython
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov
 
