@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, desarrollo]
     paths:
       - "frp_freedom_android/**"
       - ".github/workflows/build_apk.yml"
