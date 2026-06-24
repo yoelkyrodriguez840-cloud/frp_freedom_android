@@ -23,6 +23,6 @@ pytest-asyncio>=0.21.0
 # kivy>=2.2.0
 
 # Build
-flet>=0.21.0  # Para construir APK
+# flet>=0.21.0  # Para construir APK
 
 # se pueden añadir mas librerias en un futuro

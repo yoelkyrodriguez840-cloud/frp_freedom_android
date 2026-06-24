@@ -1,7 +1,5 @@
 name: Build Android APK
 
-# contruccion dwl flujo de trabaho para contruir la apk
-
 on:
   push:
     branches: [main, develop]
@@ -55,20 +53,17 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3-dev
+          sudo apt-get install -y build-essential python3-dev libgtk-3-dev
 
       - name: Install dependencies
         run: |
           echo "Installing dependencies in: $(pwd)"
-
-          # Instalar Cython primero (necesario para compilar algunas dependencias)
-          pip install cython
-
-          # Instalar dependencias principales
+          pip install --upgrade pip
           pip install -r requirements.txt
-
-          # Instalar flet con soporte para Android
-          pip install flet[android]
+          # Instalar flet sin dependencias opcionales problemáticas
+          pip install flet --no-deps
+          # Instalar solo las dependencias necesarias de flet
+          pip install watchdog webbrowser
 
       - name: Verify flet installation
         run: |
@@ -104,11 +99,11 @@ jobs:
           # Crear estructura de directorios para Android SDK
           mkdir -p android-sdk/cmdline-tools
 
-          # Descargar command line tools
-          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          # Descargar command line tools (versión más reciente)
+          wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
 
           # Extraer en una ubicación temporal
-          unzip commandlinetools-linux-9477386_latest.zip -d tmp_cmdline
+          unzip commandlinetools-linux-11076708_latest.zip -d tmp_cmdline
 
           # Mover a la ubicación correcta (cmdline-tools/latest/)
           mkdir -p android-sdk/cmdline-tools/latest
@@ -128,27 +123,45 @@ jobs:
           ls -la android-sdk/cmdline-tools/latest/bin/ || echo "❌ sdkmanager directory not found!"
           which sdkmanager || echo "⚠️ sdkmanager not in PATH yet"
 
-          # Aceptar licencias (sin interacción)
-          yes | sdkmanager --licenses
-
-          # Instalar herramientas necesarias
-          sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
-
-      - name: Accept Android Licenses
+      - name: Accept Android Licenses and Install SDK Components
         run: |
-          # Asegurar que todas las licencias estén aceptadas
-          yes | sdkmanager --licenses
+          export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
+          export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
+
+          # Aceptar licencias (sin interacción)
           yes | sdkmanager --licenses || true
+
+          # Instalar las versiones correctas de Android SDK
+          # Flutter 3.24.5 requiere Android SDK 36 y build-tools 28.0.3 o superiores
+          sdkmanager "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "build-tools;34.0.0" \
+            "platforms;android-34"
+
+          # También instalar versiones adicionales para compatibilidad
+          sdkmanager "platforms;android-33" \
+            "build-tools;33.0.2" \
+            "platforms;android-35"
 
       - name: Accept Flutter Android Licenses
         run: |
-          # Aceptar licencias específicas de Flutter para Android
+          export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
           flutter config --android-sdk $ANDROID_SDK_ROOT
           yes | flutter doctor --android-licenses || true
+
+      - name: Create .fletignore file to exclude problematic dependencies
+        run: |
+          echo "# Exclude jnius and other problematic dependencies" > .fletignore
+          echo "**/jnius*" >> .fletignore
+          echo "**/pyjnius*" >> .fletignore
+          echo "**/kivy*" >> .fletignore
 
       - name: Build APK
         run: |
           echo "Building APK in: $(pwd)"
+          export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
+          export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
           echo "Using Android SDK at: $ANDROID_SDK_ROOT"
           echo "Using Flutter at: $(which flutter)"
 
@@ -211,22 +224,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Debug - Verify files
-        run: |
-          echo "=== Current directory ==="
-          pwd
-          echo ""
-          echo "=== Files in root ==="
-          ls -la
-          echo ""
-          echo "=== Checking for test files ==="
-          if [ -d "tests" ]; then
-            echo "✅ tests directory found"
-            ls -la tests/
-          else
-            echo "⚠️ tests directory not found"
-          fi
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -236,8 +233,6 @@ jobs:
       - name: Install test dependencies
         run: |
           echo "Installing test dependencies in: $(pwd)"
-          # Instalar Cython primero
-          pip install cython
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov
 
