@@ -146,6 +146,14 @@ jobs:
         run: |
           echo "=== Probando imports de la aplicación ==="
 
+          # Verificar sintaxis de Python primero
+          echo "=== Verificando sintaxis de Python ==="
+          python -m py_compile frp_freedom_android/android_app.py || {
+            echo "❌ Error de sintaxis en android_app.py"
+            exit 1
+          }
+          echo "✅ Sintaxis correcta"
+
           # Verificar que se puede importar el módulo principal
           python -c "
           import sys
@@ -313,7 +321,6 @@ jobs:
           android.compileSdkVersion=36
           android.ndkVersion=27.0.12077973
           android.skipAndroidDeps=true
-          android.buildMode=release
           EOF
 
           echo "✅ .flet/properties creado"
@@ -446,6 +453,15 @@ jobs:
             echo "✅ __init__.py creado"
           fi
 
+          # Verificar sintaxis de todos los archivos Python
+          echo ""
+          echo "=== Verificando sintaxis de todos los archivos Python ==="
+          find frp_freedom_android -name "*.py" -type f -exec python -m py_compile {} \; -print || {
+            echo "❌ Error de sintaxis en algún archivo Python"
+            exit 1
+          }
+          echo "✅ Todos los archivos Python tienen sintaxis correcta"
+
       - name: Debug Flet build process
         run: |
           echo "=== Simulando el proceso de construcción de Flet ==="
@@ -535,17 +551,39 @@ jobs:
             echo "⚠️ flet_config.yaml no existe"
           fi
 
+          # Verificar que main.py existe
+          if [ -f "main.py" ]; then
+            echo "✅ main.py existe"
+          else
+            echo "❌ main.py NO existe - creando..."
+            cat > main.py << 'EOF'
+          #!/usr/bin/env python3
+          import sys
+          import os
+          sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+          def main():
+              try:
+                  from frp_freedom_android.android_app import main as app_main
+                  app_main()
+              except ImportError as e:
+                  print(f"Error: {e}")
+                  sys.exit(1)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+          fi
+
           # Intentar construir con opciones específicas
           echo "=== Iniciando construcción ==="
-          echo "Comando: flet build apk --build-number ${{ github.run_number }} --yes --verbose"
+          echo "Comando: flet build apk --build-number ${{ github.run_number }} --verbose"
 
           # Ejecutar flet build con opciones adicionales
           set -x
           flet build apk \
             --build-number ${{ github.run_number }} \
-            --yes \
             --verbose \
-            --android-sdk "$ANDROID_SDK_ROOT" \
             2>&1 | tee build_full.log
 
           BUILD_EXIT_CODE=${PIPESTATUS[0]}
@@ -593,7 +631,6 @@ jobs:
           android.compileSdkVersion=36
           android.ndkVersion=27.0.12077973
           android.skipAndroidDeps=true
-          android.buildMode=debug
           EOF
 
           echo "✅ Configuración de debug creada"
@@ -605,11 +642,8 @@ jobs:
           # Construir en modo debug
           echo "=== Construyendo en modo debug ==="
           flet build apk \
-            --build-mode debug \
             --build-number ${{ github.run_number }} \
-            --yes \
             --verbose \
-            --android-sdk "$ANDROID_SDK_ROOT" \
             2>&1 | tee build_debug.log
 
           if [ ${PIPESTATUS[0]} -eq 0 ]; then
@@ -715,19 +749,12 @@ jobs:
           export FLET_SKIP_ANDROID_SDK_CHECK=1
           flet build apk \
             --build-number ${{ github.run_number }} \
-            --yes \
             --verbose \
-            --android-sdk "$ANDROID_SDK_ROOT" \
             2>&1 | tee build_alt1.log || true
 
-          # Intentar con --min-sdk-version explícito
-          echo "=== Método 2: Con min-sdk-version explícito ==="
+          # Intentar sin flags adicionales
+          echo "=== Método 2: Construcción básica ==="
           flet build apk \
-            --build-number ${{ github.run_number }} \
-            --yes \
-            --verbose \
-            --android-sdk "$ANDROID_SDK_ROOT" \
-            --min-sdk-version 21 \
             2>&1 | tee build_alt2.log || true
 
       - name: Verify APK was created
