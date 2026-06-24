@@ -121,6 +121,29 @@ jobs:
             echo "✅ jnius no encontrado"
           fi
 
+      - name: Test application imports locally
+        run: |
+          echo "=== Probando imports de la aplicación ==="
+
+          # Verificar que se puede importar el módulo principal
+          python -c "
+          import sys
+          import os
+          sys.path.insert(0, os.getcwd())
+
+          try:
+              from frp_freedom_android.android_app import main
+              print('✅ Import desde frp_freedom_android exitoso')
+          except ImportError as e:
+              print(f'❌ Fallo en import desde frp_freedom_android: {e}')
+              try:
+                  from android_app import main
+                  print('✅ Import desde android_app exitoso')
+              except ImportError as e2:
+                  print(f'❌ Fallo en import desde android_app: {e2}')
+                  sys.exit(1)
+          " || echo "⚠️ Falló la verificación de imports"
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -205,6 +228,8 @@ jobs:
           echo "**/build/*" >> .fletignore
           echo "**/__pycache__/*" >> .fletignore
           echo "**/*.pyc" >> .fletignore
+          echo "**/tests/*" >> .fletignore
+          echo "**/test_*.py" >> .fletignore
 
       - name: Create Flet config to skip Android dependencies
         run: |
@@ -221,6 +246,71 @@ jobs:
             }
           }
           EOF
+
+      - name: Ensure main.py exists and is valid
+        run: |
+          echo "=== Verificando y creando main.py si es necesario ==="
+
+          # Verificar si main.py existe
+          if [ -f "main.py" ]; then
+            echo "✅ main.py encontrado"
+            echo "Contenido de main.py:"
+            cat main.py
+          else
+            echo "❌ main.py NO encontrado, creando uno..."
+            cat > main.py << 'PYEOF'
+          #!/usr/bin/env python3
+          """
+          FRP Freedom Android - Punto de entrada para Flet
+          """
+
+          import sys
+          import os
+
+          # Agregar el directorio actual al path
+          sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+          def main():
+              """Punto de entrada principal para Flet"""
+              try:
+                  # Intentar importar desde la estructura de paquete
+                  from frp_freedom_android.android_app import main as app_main
+                  app_main()
+              except ImportError:
+                  # Si falla, intentar importar directamente
+                  try:
+                      from android_app import main as app_main
+                      app_main()
+                  except ImportError as e:
+                      print(f"Error: No se pudo importar la aplicación: {e}")
+                      print("Directorio actual:", os.getcwd())
+                      print("Archivos en el directorio:", os.listdir())
+                      if os.path.exists("frp_freedom_android"):
+                          print("Contenido de frp_freedom_android:", os.listdir("frp_freedom_android"))
+                      sys.exit(1)
+
+          if __name__ == "__main__":
+              main()
+          PYEOF
+            echo "✅ main.py creado"
+            cat main.py
+          fi
+
+          # Verificar que __init__.py existe en frp_freedom_android
+          if [ -d "frp_freedom_android" ] && [ ! -f "frp_freedom_android/__init__.py" ]; then
+            echo "⚠️ __init__.py no encontrado en frp_freedom_android, creando..."
+            echo "# FRP Freedom Android Package" > frp_freedom_android/__init__.py
+            echo "from .android_app import main" >> frp_freedom_android/__init__.py
+            echo "__version__ = '1.0.0'" >> frp_freedom_android/__init__.py
+          fi
+
+          # Verificar que android_app.py existe
+          if [ -d "frp_freedom_android" ] && [ ! -f "frp_freedom_android/android_app.py" ]; then
+            echo "❌ ERROR CRÍTICO: android_app.py no encontrado en frp_freedom_android/"
+            echo "Contenido de frp_freedom_android/:"
+            ls -la frp_freedom_android/
+            exit 1
+          fi
 
       - name: Debug Flet build process
         run: |
@@ -249,17 +339,9 @@ jobs:
               try:
                   import frp_freedom_android.android_app
                   print('✅ android_app imported successfully')
-                  print(f'android_app attributes: {[attr for attr in dir(frp_freedom_android.android_app) if not attr.startswith(\"_\")]}')
               except ImportError as e2:
                   print(f'❌ Could not import android_app: {e2}')
           "
-
-          echo "=== Verificando que la app se ejecuta ==="
-          # Esto verificará que la app no tiene errores de importación
-          timeout 10s flet run --web || echo "⚠️ App run timeout (normal)"
-
-          echo "=== Intentando construir con --dry-run ==="
-          flet build apk --dry-run --yes --verbose || echo "❌ Dry run failed"
 
       - name: Build APK with detailed logging
         id: build_apk
@@ -290,29 +372,6 @@ jobs:
             pip install --upgrade flet pyyaml cryptography requests urllib3 msgpack
           fi
 
-          # Verificar que el punto de entrada existe
-          echo "=== Verificando punto de entrada ==="
-          if [ -f "main.py" ]; then
-            echo "✅ main.py encontrado"
-            echo "Contenido de main.py:"
-            cat main.py
-          elif [ -f "frp_freedom_android/android_app.py" ]; then
-            echo "✅ android_app.py encontrado"
-            echo "Creando main.py temporal..."
-            cat > main.py << 'PYEOF'
-          from frp_freedom_android.android_app import main
-          if __name__ == "__main__":
-              main()
-          PYEOF
-            echo "main.py creado:"
-            cat main.py
-          else
-            echo "❌ No se encontró el archivo principal"
-            echo "Buscando archivos Python..."
-            find . -name "*.py" -type f | head -20
-            exit 1
-          fi
-
           # Verificar Flutter
           echo "=== Flutter doctor ==="
           flutter doctor -v
@@ -325,17 +384,44 @@ jobs:
           echo "=== Espacio en disco ==="
           df -h
 
+          # Crear un script de prueba para verificar el build
+          echo "=== Creando script de prueba ==="
+          cat > test_build.py << 'PYEOF'
+          #!/usr/bin/env python3
+          import subprocess
+          import sys
+          import os
+
+          def test_flet_build():
+              print("=== Probando construcción con flet ===")
+              cmd = [
+                  sys.executable, "-m", "flet", "build", "apk",
+                  "--build-number", "1",
+                  "--yes",
+                  "--verbose"
+              ]
+              print(f"Ejecutando: {' '.join(cmd)}")
+              result = subprocess.run(cmd, capture_output=False, text=True)
+              return result.returncode
+
+          if __name__ == "__main__":
+              sys.exit(test_flet_build())
+          PYEOF
+
           # Intentar construir con redirección de errores
           echo "=== Iniciando construcción ==="
           echo "Comando: flet build apk --build-number ${{ github.run_number }} --yes --verbose"
 
           # Ejecutar y capturar salida
+          set -x
           flet build apk \
             --build-number ${{ github.run_number }} \
             --yes \
-            --verbose 2>&1 | tee build.log
+            --verbose 2>&1 | tee build_full.log
 
           BUILD_EXIT_CODE=${PIPESTATUS[0]}
+          set +x
+
           echo "Exit code: $BUILD_EXIT_CODE"
 
           if [ $BUILD_EXIT_CODE -eq 0 ]; then
@@ -344,15 +430,19 @@ jobs:
           else
             echo "❌ Error en la construcción (código: $BUILD_EXIT_CODE)"
             echo "=== Últimas 100 líneas del log ==="
-            tail -100 build.log
+            tail -100 build_full.log
             echo ""
             echo "=== Buscando errores específicos ==="
-            grep -i "error\|exception\|traceback" build.log | head -20
+            grep -i "error\|exception\|traceback\|failed" build_full.log | head -30 || echo "No se encontraron errores específicos"
+            echo ""
+            echo "=== Buscando advertencias ==="
+            grep -i "warning\|warn" build_full.log | head -20 || echo "No se encontraron advertencias"
             echo "build_status=failed" >> $GITHUB_OUTPUT
             exit 1
           fi
 
       - name: Debug build directory
+        if: always()
         run: |
           echo "=== Debug: Contenido del directorio después del build ==="
           echo "Directorio actual:"
@@ -390,6 +480,7 @@ jobs:
 
       - name: Check for AAB files and convert to APK
         id: check_aab
+        if: always()
         run: |
           echo "=== Buscando archivos AAB (Android App Bundle) ==="
           AAB_FILES=$(find . -name "*.aab" -type f 2>/dev/null)
@@ -538,11 +629,15 @@ jobs:
             echo "Proyectos Flutter en el directorio:"
             find . -name "pubspec.yaml" -type f || echo "No se encontraron proyectos Flutter"
             echo ""
+            echo "=== Últimas líneas del build_full.log ==="
+            if [ -f "build_full.log" ]; then
+              tail -50 build_full.log
+            fi
+            echo ""
             echo "=== Últimas líneas del build.log ==="
             if [ -f "build.log" ]; then
               tail -50 build.log
             fi
-            echo ""
             echo "apk_exists=false" >> $GITHUB_OUTPUT
             exit 1
           fi
@@ -560,14 +655,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-      - name: Upload build log (for debugging)
-        if: failure()
+      - name: Upload build logs (for debugging)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
+          name: build-logs
           path: |
+            build_full.log
             build.log
             build_alt*.log
+            *.log
           retention-days: 7
 
       - name: Upload APK to release (optional)
@@ -598,7 +695,7 @@ jobs:
           echo "::error::   - El archivo main.py existe y es accesible"
           echo "::error::   - El SDK de Android está correctamente configurado"
           echo "::error::🔧 Acciones recomendadas:"
-          echo "::error::   1. Revisa el archivo build.log en los artifacts"
+          echo "::error::   1. Revisa el archivo build_full.log en los artifacts"
           echo "::error::   2. Verifica que el código compile localmente con 'flet build apk'"
           echo "::error::   3. Asegúrate de que todas las dependencias están actualizadas"
           echo "::error::   4. Verifica la configuración de Android SDK"
@@ -771,5 +868,6 @@ jobs:
           echo "::error::  2. Verifica que el código compile localmente"
           echo "::error::  3. Asegúrate de que todas las dependencias están actualizadas"
           echo "::error::  4. Verifica la configuración de Android SDK"
-          echo "::error::  5. Revisa el artifact 'build-log' para más detalles"
+          echo "::error::  5. Revisa el artifact 'build-logs' para más detalles"
+          echo "::error::  6. Ejecuta 'flet build apk --verbose' localmente para ver el error exacto"
           exit 1
