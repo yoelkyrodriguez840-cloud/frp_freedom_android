@@ -17,17 +17,11 @@ def main():
         from frp_freedom_android.android_app import main as app_main
 
         app_main()
-    except ImportError:
-        # Si falla, intentar importar directamente
-        try:
-            from android_app import main as app_main
-
-            app_main()
-        except ImportError as e:
-            print(f"Error: No se pudo importar la aplicación: {e}")
-            print("Directorio actual:", os.getcwd())
-            print("Archivos en el directorio:", os.listdir())
-            sys.exit(1)
+    except ImportError as e:
+        print(f"Error: No se pudo importar la aplicación: {e}")
+        print("Directorio actual:", os.getcwd())
+        print("Archivos en el directorio:", os.listdir())
+        sys.exit(1)
 
 
 if __name__ == "__main__":

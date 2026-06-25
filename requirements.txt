@@ -1,7 +1,4 @@
-# FRP Freedom Android - Dependencias Completas
-
-# Core Framework - Solo lo esencial para Flet
-# flet>=0.21.0
+# FRP Freedom Android 
 flet>=0.24.1
 pyyaml>=6.0
 cryptography>=41.0.0

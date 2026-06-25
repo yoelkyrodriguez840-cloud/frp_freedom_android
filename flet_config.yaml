@@ -1,5 +1,5 @@
 # ====================================================================
-# CONFIGURACIÓN DE PRODUCCIÓN DE FLET PARA ANDROID (OPTIMIZACIÓN DE PESO)
+# CONFIGURACIÓN DE PRODUCCIÓN DE FLET PARA ANDROID
 # ====================================================================
 
 android:
@@ -13,10 +13,10 @@ android:
   # Dividir por arquitectura (Imprescindible para bajar de 600MB a <40MB por APK)
   split_per_abi: true
 
-  # ===== NUEVO: Forzar solo ARM64 =====
+  # ===== NUEVO: Forzar solo ARM64  ================
+
   ndk:
-    abiFilters: ["arm64-v8a"]
-  # ===== FIN NUEVO =====
+    abiFilters: ["arm64-v8a"] # NOTE: comentar para produccion
 
   # Excluir dependencias que causan duplicación de binarios nativos o fallas en CI/CD
   dependencies:
@@ -34,7 +34,7 @@ android:
     - android.permission.READ_EXTERNAL_STORAGE
     - android.permission.USB_PERMISSION
 
-  # Configuraciones críticas de compilación y compresión para reducir peso
+  # Configuraciones críticas de compilación y compresión
   build:
     skip_android_deps: true
     debug_mode: false
@@ -45,6 +45,6 @@ android:
 
 app:
   name: "FRP Freedom"
-  version: "1.0.0"
+  version: "1.0.0" # FIX: Corregir la vercion estatica y utilizar vercio controlada por variable de entorno
   build_number: 1
   package_name: "org.frpfreedom.app"

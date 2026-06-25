@@ -1,13 +1,13 @@
 [project]
-name = "frp-freedom-android"
-version = "1.0.0"
+name = "frp-freedom"
+version = "1.0.0"                                        # FIX: Corregir la vercion estatica y utilizar vercio controlada por variable de entorno
 description = "FRP Freedom - Android APK for FRP Bypass"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
-authors = [{ name = "FRP Freedom Project" }]
+license = { text = "GNU" }
+authors = [{ name = "FRP Freedom by Zeidel Garcia" }]
 
-# Dependencias principales - SIN jnius para evitar problemas en CI/CD
+# Dependencias principales 
 dependencies = [
   "flet>=0.21.0",
   "pyyaml>=6.0",
@@ -33,18 +33,14 @@ frp-freedom = "main:main"
 
 # Configuración de construcción
 [build-system]
-requires = [
-  "setuptools>=61.0",
-  "wheel",
-  "cython>=3.0.0",    # Añadido para compatibilidad
-]
+requires = ["setuptools>=61.0", "wheel", "cython>=3.0.0"]
 build-backend = "setuptools.build_meta"
 
 # ============================================
 # CONFIGURACIONES DE HERRAMIENTAS
 # ============================================
 
-# Configuración específica para Flet - IMPORTANTE para evitar jnius
+# Configuración específica para Flet
 [tool.flet]
 # Deshabilitar dependencias opcionales de Android
 android_dependencies = false
@@ -176,18 +172,14 @@ bdist_wheel = { universal = false }
 
 # Metadatos adicionales para PyPI (opcional)
 [project.urls]
-Homepage = "https://github.com/yourusername/frp_freedom_android"
-Repository = "https://github.com/yourusername/frp_freedom_android.git"
-Issues = "https://github.com/yourusername/frp_freedom_android/issues"
+Homepage = "https://github.com/yoelkyrodriguez840-cloud/frp_freedom_android"
+Repository = "https://github.com/yoelkyrodriguez840-cloud/frp_freedom_android.git"
+Issues = "https://github.com/yoelkyrodriguez840-cloud/frp_freedom_android/issues"
 
-# [project.classifiers]
-# Development Status = "3 - Alpha"
-# Intended Audience = "Developers"
-# Programming Language = "Python :: 3"
-# Programming Language = "Python :: 3.9"
-# Programming Language = "Python :: 3.10"
-# Programming Language = "Python :: 3.11"
-# Operating System = "Android"
-# Operating System = "Linux"
-# Topic = "FRP Bypass"
-# License = "MIT"
+[project.classifiers]
+Development_Status = "3 - Alpha"
+Intended_Audience = "Developers"
+Programming_Language = "Python :: 3.9"
+Operating_System = "Android"
+Topic = "FRP Bypass"
+License = "GNU"

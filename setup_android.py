@@ -13,7 +13,7 @@ def install_dependencies():
     """Instalar dependencias"""
     print("Instalando dependencias...")
 
-    deps = ["flet", "jnius", "pyyaml"]  # , "cryptography"]
+    deps = ["flet", "jnius", "pyyaml"]  # , "cryptography"] # NOTE: Descomentar para Produccion
 
     for dep in deps:
         subprocess.check_call([sys.executable, "-m", "pip", "install", dep])
@@ -39,7 +39,7 @@ def build_apk():
         "--build-number",
         "1",
         "--version",
-        "1.0.0",
+        "1.0.0",  # FIX: Corregir la vercion estatica y utilizar vercio controlada por variable de entorno
     ]
 
     try:
