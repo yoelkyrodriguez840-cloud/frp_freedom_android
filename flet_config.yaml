@@ -1,5 +1,5 @@
 # ====================================================================
-# CONFIGURACIÓN DE PRODUCCIÓN DE FLET PARA ANDROID (OPTIMIZACIÓN DE PESO)
+# CONFIGURACIÓN DE PRODUCCIÓN DE FLET PARA ANDROID
 # ====================================================================
 
 android:
@@ -12,6 +12,11 @@ android:
 
   # Dividir por arquitectura (Imprescindible para bajar de 600MB a <40MB por APK)
   split_per_abi: true
+
+  # ===== NUEVO: Forzar solo ARM64  ================
+
+  ndk:
+    abiFilters: ["arm64-v8a"] # NOTE: comentar para produccion
 
   # Excluir dependencias que causan duplicación de binarios nativos o fallas en CI/CD
   dependencies:
@@ -29,7 +34,7 @@ android:
     - android.permission.READ_EXTERNAL_STORAGE
     - android.permission.USB_PERMISSION
 
-  # Configuraciones críticas de compilación y compresión para reducir peso
+  # Configuraciones críticas de compilación y compresión
   build:
     skip_android_deps: true
     debug_mode: false
@@ -40,41 +45,6 @@ android:
 
 app:
   name: "FRP Freedom"
-  version: "1.0.0"
+  version: "1.0.0" # FIX: Corregir la vercion estatica y utilizar vercio controlada por variable de entorno
   build_number: 1
   package_name: "org.frpfreedom.app"
-# # Configuración de Flet para Android
-# android:
-#   min_sdk_version: 24
-#   target_sdk_version: 36
-#   compile_sdk_version: 36
-#   build_tools_version: "36.0.0"
-#   ndk_version: "27.0.12077973"
-#
-#   # Dependencias a excluir
-#   dependencies:
-#     skip:
-#       - jnius
-#       - pyjnius
-#       - kivy
-#       - plyer
-#
-#   # Permisos de Android
-#   permissions:
-#     - android.permission.INTERNET
-#     - android.permission.ACCESS_NETWORK_STATE
-#     - android.permission.WRITE_EXTERNAL_STORAGE
-#     - android.permission.READ_EXTERNAL_STORAGE
-#     - android.permission.USB_PERMISSION
-#
-#   # Configuraciones adicionales
-#   build:
-#     skip_android_deps: true
-#     debug_mode: false
-#     enable_compression: true
-#
-# app:
-#   name: "FRP Freedom"
-#   version: "1.0.0"
-#   build_number: 1
-#   package_name: "org.frpfreedom.app"

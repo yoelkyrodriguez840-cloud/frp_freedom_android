@@ -39,3 +39,4 @@ htmlcov/
 build/
 dist/
 *.pyc
+gen_assets.py
