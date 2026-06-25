@@ -35,6 +35,7 @@ jobs:
             echo "✅ Main application file found"
           else
             echo "❌ No main application file found!"
+            echo "Buscando archivos Python..."
             find . -name "*.py" -type f | head -20
             exit 1
           fi
@@ -44,17 +45,173 @@ jobs:
             echo "❌ requirements.txt NOT found in root!"
             exit 1
           fi
+          if [ -f "pyproject.toml" ]; then
+            echo "✅ pyproject.toml found in root"
+          else
+            echo "⚠️ pyproject.toml NOT found (optional)"
+          fi
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install Python dependencies
+      - name: Install system dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            python3-dev \
+            libgtk-3-dev \
+            mesa-utils \
+            unzip \
+            wget \
+            curl \
+            aapt \
+            default-jre \
+            default-jdk \
+            file
+
+      # - name: Install bundletool (for AAB conversion)
+      #   run: |
+      #     wget https://github.com/google/bundletool/releases/download/1.15.6/bundletool-all-1.15.6.jar
+      #     sudo mv bundletool-all-1.15.6.jar /usr/local/bin/bundletool.jar
+      #     echo '#!/bin/bash' | sudo tee /usr/local/bin/bundletool
+      #     echo 'java -jar /usr/local/bin/bundletool.jar "$@"' | sudo tee -a /usr/local/bin/bundletool
+      #     sudo chmod +x /usr/local/bin/bundletool
+      #     bundletool version || echo "bundletool installed"
+
+      - name: Install dependencies
+        run: |
+          echo "Installing dependencies in: $(pwd)"
+          pip install --upgrade pip
+
+          # Eliminar cualquier referencia a jnius en requirements.txt
+          if grep -q "jnius" requirements.txt 2>/dev/null; then
+            echo "⚠️ Eliminando jnius de requirements.txt"
+            sed -i '/jnius/d' requirements.txt
+          fi
+
+          # Instalar dependencias desde requirements.txt
+          pip install -r requirements.txt || echo " Algunas dependencias fallaron, continuando..."
+
+          # Instalar dependencias adicionales necesarias
+          pip install watchdog repath typing-extensions anyio httpx httpcore h11 idna certifi
+
+          # Verificar instalación de flet
+          python -c "import flet; print(f'Flet version: {flet.__version__}')" || echo "⚠️ Flet no instalado correctamente"
+
+      - name: Upgrade Flet to latest version
+        run: |
+          echo "=== Actualizando Flet ==="
+          pip install --upgrade flet
+
+          # Verificar versión
+          python -c "import flet; print(f'Flet version: {flet.__version__}')"
+
+          # Si Flet es >= 0.22.0, usar nuevas opciones
+          python -c "
+          import flet
+          version = tuple(map(int, flet.__version__.split('.')))
+          if version >= (0, 22, 0):
+              print('✅ Flet 0.22+ detectado')
+              import os
+              os.makedirs('.flet', exist_ok=True)
+              with open('.flet/version', 'w') as f:
+                  f.write('0.22.0')
+          "
+
+      # - name: Verify flet installation
+      #   run: |
+      #     echo "=== Verifying flet installation ==="
+      #     python -c "import flet; print(f'Flet version: {flet.__version__}')"
+      #     which flet || echo "flet not in PATH"
+      #     flet --version || echo "flet command not available"
+      #     # Verificar dependencias clave
+      #     python -c "import yaml; print('✅ yaml installed')" || echo "❌ yaml no instalado"
+      #     python -c "import cryptography; print('✅ cryptography installed')" || echo "❌ cryptography no instalado"
+      #     python -c "import requests; print('✅ requests installed')" || echo "❌ requests no instalado"
+      #     python -c "import msgpack; print('✅ msgpack installed')" || echo "❌ msgpack no instalado"
+      #
+      #     # Verificar que jnius NO esté instalado
+      #     if pip list | grep -q jnius; then
+      #       echo "❌ jnius encontrado - desinstalando..."
+      #       pip uninstall -y jnius pyjnius || true
+      #     else
+      #       echo "✅ jnius no encontrado"
+      #     fi
+
+      # - name: Fix typing imports in Python files
+      #   run: |
+      #     echo "=== Verificando y corrigiendo importaciones de typing ==="
+      #
+      #     # Buscar archivos que usen List, Dict, Optional sin importar
+      #     find frp_freedom_android -name "*.py" -type f | while read file; do
+      #       if grep -q "List\[" "$file" && ! grep -q "from typing import.*List" "$file"; then
+      #         echo "⚠️ $file usa List pero no lo importa - corrigiendo..."
+      #         sed -i '1i from typing import List, Dict, Optional, Any, Union' "$file"
+      #       fi
+      #       if grep -q "Dict\[" "$file" && ! grep -q "from typing import.*Dict" "$file"; then
+      #         echo "⚠️ $file usa Dict pero no lo importa - corrigiendo..."
+      #         sed -i '1i from typing import List, Dict, Optional, Any, Union' "$file"
+      #       fi
+      #       if grep -q "Optional\[" "$file" && ! grep -q "from typing import.*Optional" "$file"; then
+      #         echo "⚠️ $file usa Optional pero no lo importa - corrigiendo..."
+      #         sed -i '1i from typing import List, Dict, Optional, Any, Union' "$file"
+      #       fi
+      #     done
+      #
+      # - name: Test application imports locally
+      #   run: |
+      #     echo "=== Probando imports de la aplicación ==="
+      #
+      #     # Verificar sintaxis de Python primero
+      #     echo "=== Verificando sintaxis de Python ==="
+      #     find frp_freedom_android -name "*.py" -type f -exec python -m py_compile {} \; -print || {
+      #       echo "❌ Error de sintaxis en algún archivo Python"
+      #       exit 1
+      #     }
+      #     echo "✅ Todos los archivos tienen sintaxis correcta"
+      #
+      #     # Verificar que se puede importar el módulo principal
+      #     python -c "
+      #     import sys
+      #     import os
+      #     sys.path.insert(0, os.getcwd())
+      #
+      #     try:
+      #         from frp_freedom_android.android_app import main
+      #         print('✅ Import desde frp_freedom_android exitoso')
+      #     except ImportError as e:
+      #         print(f'❌ Fallo en import desde frp_freedom_android: {e}')
+      #         try:
+      #             from android_app import main
+      #             print('✅ Import desde android_app exitoso')
+      #         except ImportError as e2:
+      #             print(f'❌ Fallo en import desde android_app: {e2}')
+      #             sys.exit(1)
+      #     "
+      #
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.19.6"
+          channel: "stable"
+          cache: true
+
+      # - name: Verify Flutter installation
+      #   run: |
+      #     echo "=== Verifying Flutter installation ==="
+      #     flutter --version
+      #     flutter doctor -v
+      #
 
       - name: Set up Java Development Kit (JDK 17)
         uses: actions/setup-java@v4
@@ -64,130 +221,912 @@ jobs:
 
       - name: Setup Android SDK
         run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+
+          # Crear estructura de directorios para Android SDK
           mkdir -p android-sdk/cmdline-tools
-          cd android-sdk/cmdline-tools
+
+          # Descargar command line tools
           wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip commandlinetools-linux-11076708_latest.zip
-          mv cmdline-tools latest
-          cd ../..
-          export ANDROID_SDK_ROOT="$PWD/android-sdk"
-          export PATH="$PWD/android-sdk/cmdline-tools/latest/bin:$PATH"
-          echo "yes" | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.0.12077973"
 
-      - name: Create robust .fletignore file
+          # Extraer en una ubicación temporal
+          unzip commandlinetools-linux-11076708_latest.zip -d tmp_cmdline
+
+          # Mover a la ubicación correcta (cmdline-tools/latest/)
+          mkdir -p android-sdk/cmdline-tools/latest
+          mv tmp_cmdline/cmdline-tools/* android-sdk/cmdline-tools/latest/
+          rm -rf tmp_cmdline
+
+          # Configurar variables de entorno
+          echo "ANDROID_SDK_ROOT=${{ github.workspace }}/android-sdk" >> $GITHUB_ENV
+          echo "${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/android-sdk/platform-tools" >> $GITHUB_PATH
+
+          # Agregar también al PATH actual
+          export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
+
+          # Verificar estructura antes de continuar
+          echo "=== Verifying Android SDK structure ==="
+          ls -la android-sdk/cmdline-tools/latest/bin/ || echo "❌ sdkmanager directory not found!"
+          which sdkmanager || echo "⚠️ sdkmanager not in PATH yet"
+
+      - name: Accept Android Licenses and Install SDK Components
         run: |
-          cat > .fletignore << 'EOF'
-          # Evitar que logs pesados entren en el empaquetado en caliente
-          *.log
-          *.txt
-          *.md
-          .fletignore
-          build_full.log
+          export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
+          export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
 
-          # Archivos y directorios de CI/CD o compilación previa
-          build/
-          dist/
-          .flet-build/
-          android/
-          release_apks/
-          converted_apks/
-          tmp_cmdline/
-          android-sdk/
-          .github/
-          .git/
+          # Aceptar licencias (sin interacción)
+          yes | sdkmanager --licenses || true
 
-          # Bloquear entornos virtuales locales o cachés del Action
-          venv/
-          .venv/
-          __pycache__/
-          *.pyc
-          .pytest_cache/
-          .mypy_cache/
-          .coverage
-          coverage.xml
+          # Instalar las versiones correctas de Android SDK
+          sdkmanager "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "build-tools;34.0.0" \
+            "platforms;android-34" \
+            "platforms;android-33" \
+            "build-tools;33.0.2" \
+            "platforms;android-35"
 
-          # Filtro estricto de dependencias no Android
-          **/jnius*
-          **/pyjnius*
-          **/kivy*
-          **/plyer*
+      - name: Accept Flutter Android Licenses
+        run: |
+          export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
+          flutter config --android-sdk $ANDROID_SDK_ROOT
+          yes | flutter doctor --android-licenses || true
+
+      - name: Create .fletignore file
+        run: |
+          echo "# Exclude jnius and other problematic dependencies" > .fletignore
+          echo "**/jnius*" >> .fletignore
+          echo "**/pyjnius*" >> .fletignore
+          echo "**/kivy*" >> .fletignore
+          echo "**/build/*" >> .fletignore
+          echo "**/__pycache__/*" >> .fletignore
+          echo "**/*.pyc" >> .fletignore
+          echo "**/tests/*" >> .fletignore
+          echo "**/test_*.py" >> .fletignore
+          echo "**/venv/*" >> .fletignore
+          echo "**/.git/*" >> .fletignore
+          echo "**/*.md" >> .fletignore
+          echo "**/*.txt" >> .fletignore
+          echo "**/*.yml" >> .fletignore
+          echo "**/*.yaml" >> .fletignore
+          echo "**/LICENSE*" >> .fletignore
+          echo "*log" >> .fletignore
+          echo "*.txt" >> .fletignore
+          echo "*.md" >> .fletignore
+          echo "*.fletignore" >> .fletignore
+          echo "build_full.log" >> .fletignore
+          echo "build/" >> .fletignore
+          echo "dist/" >> .fletignore
+          echo ".flet-build/" >> .fletignore
+          echo "android/" >> .fletignore
+          echo "release_apks" >> .fletignore
+          echo "converted_apks" >> .fletignore
+          echo "tmp_cmdline" >> .fletignore
+          echo "android-sdk" >> .fletignore
+          echo ".github/" >> .fletignore
+          echo ".git/" >> .fletignore
+          echo "venv/" >> .fletignore
+          echo ".venv/" >> .fletignore
+          echo "__pycache__/" >> .fletignore
+          echo "*.pyc" >> .fletignore
+          echo ".pytest_cache/" >> .fletignore
+          echo ".mypy_cache/" >> .fletignore
+          echo ".coverage" >> .fletignore
+          echo "coverage.xml" >> .fletignore
+          echo "**/jnius" >> .fletignore
+          echo "**/pyjnius*" >> .fletignore
+          echo "**/kivy*" >> .fletignore
+          echo "**/plyer*" >> .fletignore
+
+      - name: Create Flet Android configuration
+        run: |
+          echo "=== Creando configuración para Flet Android ==="
+
+          # Crear directorio de configuración
+          mkdir -p .flet/android
+
+          # Crear build.gradle personalizado
+          cat > .flet/android/build.gradle << 'EOF'
+          android {
+              defaultConfig {
+                  minSdkVersion 23
+                  targetSdkVersion 36
+              }
+              compileSdkVersion 36
+              ndkVersion "27.0.12077973"
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
           EOF
-          echo "✅ .fletignore creado de forma exitosa."
-          cat .fletignore
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: "stable"
-          cache: true
+          echo "✅ build.gradle creado"
+          cat .flet/android/build.gradle
+
+          echo ""
+          echo "=== Creando flet_config.yaml ==="
+          cat > flet_config.yaml << 'EOF'
+          android:
+            min_sdk_version: 23
+            target_sdk_version: 36
+            compile_sdk_version: 36
+            ndk_version: "27.0.12077973"
+            # Habilitar split por ABI para reducir tamaño
+            split_per_abi: true
+            build:
+              skip_android_deps: true
+              # Agregar opciones de optimización
+              optimization:
+                tree_shake_icons: true
+                shrink_resources: true
+            dependencies:
+              skip:
+                - jnius
+                - pyjnius
+                - kivy
+                - plyer
+          EOF
+
+          echo "✅ flet_config.yaml creado"
+
+          echo ""
+          echo "=== Creando .flet/properties ==="
+          mkdir -p .flet
+          cat > .flet/properties << 'EOF'
+          android.minSdkVersion=23
+          android.targetSdkVersion=36
+          android.compileSdkVersion=36
+          android.ndkVersion=27.0.12077973
+          android.skipAndroidDeps=true
+          # Habilitar split por ABI
+          android.splitPerAbi=true
+          # Optimizaciones
+          android.treeShakeIcons=true
+          android.shrinkResources=true
+          EOF
+
+          echo "✅ .flet/properties creado"
+          cat .flet/properties
+
+      # ============================================
+      # CONSTRUCCIÓN PRINCIPAL CON SPLIT PER ABI
+      # ============================================
 
       - name: Build APKs with split per ABI
         id: build_apk
         run: |
-          echo "Building APKs with split per ABI..."
+          echo "Building APKs with split per ABI in: $(pwd)"
           export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
           export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
-
-          # Forzar a Flet a procesar el build de forma limpia y desatendida
-          export FLET_VERBOSE=0
+          export FLET_VERBOSE=1
+          export FLET_LOG_LEVEL=DEBUG
+          export FLET_ANDROID_BUILD=true
           export FLET_CLI_NO_PROMPT=1
           export FLET_AGREE_TO_INSTALL_FLUTTER=1
 
-          # Limpieza absoluta de residuos previos antes del empaquetado masivo
+          echo "=== Environment ==="
+          echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+          echo "PATH: $PATH"
+          echo "Python: $(which python)"
+          echo "Python version: $(python --version)"
+          echo "Pip: $(which pip)"
+
+          # Verificar todas las dependencias
+          echo "=== Dependencias instaladas ==="
+          pip list
+
+          # Verificar que no haya conflictos
+          echo "=== Verificando conflictos ==="
+          if pip check; then
+            echo "✅ No hay conflictos de dependencias"
+          else
+            echo "⚠️ Conflictos detectados, intentando resolver..."
+            pip install --upgrade flet pyyaml cryptography requests urllib3 msgpack
+          fi
+
+          # Verificar Flutter
+          echo "=== Flutter doctor ==="
+          flutter doctor -v
+
+          # Limpiar construcciones anteriores
+          echo "=== Limpiando construcciones anteriores ==="
           rm -rf build/ dist/ .flet-build/ android/
 
-          # Ejecución limpia del empaquetador Flet
-          flet build apk --split-per-abi --build-number ${{ github.run_number }} --yes
+          # Verificar espacio en disco
+          echo "=== Espacio en disco ==="
+          df -h
 
-      - name: Organize and verify output APKS
-        run: |
-          mkdir -p release_apks
-          # Buscar los APKs generados en la ruta de distribución de Flet
-          if [ -d "build/apk" ]; then
-            find build/apk -name "*.apk" -exec cp {} release_apks/ \;
-          elif [ -d "dist" ]; then
-            find dist -name "*.apk" -exec cp {} release_apks/ \;
+          # Verificar configuración de Flet
+          echo "=== Verificando configuración de Flet ==="
+          if [ -d ".flet" ]; then
+            echo "✅ .flet/ existe"
+            find .flet -type f -exec echo "   {}" \;
+          else
+            echo "⚠️ .flet/ no existe"
           fi
-          echo "=== Contenido de release_apks ==="
-          ls -lh release_apks/
 
-      - name: Upload APK Artifacts
+          if [ -f "flet_config.yaml" ]; then
+            echo "✅ flet_config.yaml existe"
+            cat flet_config.yaml
+          else
+            echo "⚠️ flet_config.yaml no existe"
+          fi
+
+          # Intentar construir con split per ABI
+          echo "=== Iniciando construcción con split per ABI ==="
+          echo "Comando: flet build apk --split-per-abi --build-number ${{ github.run_number }} --yes --verbose"
+
+          # Ejecutar flet build con opciones adicionales
+          set -x
+          flet build apk \
+            --split-per-abi \
+            --build-number ${{ github.run_number }} \
+            --yes \
+            --verbose \
+            2>&1 | tee build_full.log
+
+          BUILD_EXIT_CODE=${PIPESTATUS[0]}
+          set +x
+
+          echo "Exit code: $BUILD_EXIT_CODE"
+
+          if [ $BUILD_EXIT_CODE -eq 0 ]; then
+            echo "✅ Construcción exitosa"
+            echo "build_status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Error en la construcción (código: $BUILD_EXIT_CODE)"
+            
+            # Buscar errores específicos en el log
+            echo "=== Buscando errores específicos ==="
+            grep -E "error|exception|failed|FAILED" build_full.log | head -30
+            
+            # Buscar específicamente el error de minSdk
+            echo "=== Buscando errores de minSdk ==="
+            grep -i "minsdk\|minsdkversion" build_full.log || echo "No se encontraron errores de minSdk"
+            
+            # Buscar errores de Gradle
+            echo "=== Buscando errores de Gradle ==="
+            grep -i "gradle" build_full.log | head -20 || echo "No se encontraron errores de Gradle"
+            
+            echo "build_status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Build fallback without split per ABI
+        if: steps.build_apk.outputs.build_status == 'failed' || failure()
+        id: build_fallback
+        run: |
+          echo "=== Intentando construir sin split per ABI (fallback) ==="
+          export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
+          export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
+          export FLET_VERBOSE=1
+          export FLET_LOG_LEVEL=DEBUG
+          export FLET_CLI_NO_PROMPT=1
+          export FLET_AGREE_TO_INSTALL_FLUTTER=1
+
+          # Crear configuración para debug
+          mkdir -p .flet
+          cat > .flet/properties << 'EOF'
+          android.minSdkVersion=21
+          android.targetSdkVersion=36
+          android.compileSdkVersion=36
+          android.ndkVersion=27.0.12077973
+          android.skipAndroidDeps=true
+          android.splitPerAbi=false
+          android.treeShakeIcons=true
+          android.shrinkResources=true
+          EOF
+
+          echo "✅ Configuración de fallback creada"
+          cat .flet/properties
+
+          # Limpiar construcciones anteriores
+          rm -rf build/ dist/ .flet-build/ android/
+
+          # Construir en modo universal
+          echo "=== Construyendo APK universal (fallback) ==="
+          flet build apk \
+            --build-number ${{ github.run_number }} \
+            --yes \
+            --verbose \
+            2>&1 | tee build_fallback.log
+
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo "✅ Construcción universal exitosa"
+            echo "build_status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Construcción universal falló"
+            echo "build_status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Debug build directory
+        if: always()
+        run: |
+          echo "=== Debug: Contenido del directorio después del build ==="
+          echo "Directorio actual:"
+          ls -la
+          echo ""
+          echo "Buscando directorios de build:"
+          find . -type d -name "build" -o -name "dist" -o -name ".flet-build" | head -20
+          echo ""
+          echo "Buscando archivos .apk:"
+          find . -name "*.apk" -type f 2>/dev/null || echo "No se encontraron APK"
+          echo ""
+          echo "Buscando archivos .aab:"
+          find . -name "*.aab" -type f 2>/dev/null || echo "No se encontraron AAB"
+          echo ""
+          echo "Buscando archivos .apks:"
+          find . -name "*.apks" -type f 2>/dev/null || echo "No se encontraron APKS"
+          echo ""
+          echo "Contenido de .flet-build si existe:"
+          if [ -d ".flet-build" ]; then
+            ls -la .flet-build/
+          fi
+          echo ""
+          echo "Contenido de build si existe:"
+          if [ -d "build" ]; then
+            ls -la build/
+            if [ -d "build/app" ]; then
+              echo "Contenido de build/app:"
+              ls -la build/app/
+              if [ -d "build/app/outputs" ]; then
+                echo "Contenido de build/app/outputs:"
+                find build/app/outputs -type f | head -20
+              fi
+            fi
+          fi
+
+      - name: Try alternative build methods if needed
+        if: steps.build_apk.outputs.build_status == 'failed' && steps.build_fallback.outputs.build_status == 'failed'
+        run: |
+          echo "=== Intentando métodos alternativos de construcción ==="
+          export FLET_CLI_NO_PROMPT=1
+          export FLET_AGREE_TO_INSTALL_FLUTTER=1
+
+          # Intentar con --no-android-sdk-check
+          echo "=== Método 1: Sin verificación de SDK ==="
+          export FLET_SKIP_ANDROID_SDK_CHECK=1
+          flet build apk \
+            --build-number ${{ github.run_number }} \
+            --yes \
+            --verbose \
+            2>&1 | tee build_alt1.log || true
+
+          # Intentar sin flags adicionales
+          echo "=== Método 2: Construcción básica ==="
+          flet build apk \
+            --yes \
+            2>&1 | tee build_alt2.log || true
+
+      - name: Verify APK was created
+        id: verify_apk
+        run: |
+          echo "=== Verificando que el APK fue creado ==="
+
+          # Buscar archivos APK en todas las ubicaciones posibles
+          echo "Buscando en ubicaciones comunes..."
+
+          # Buscar en varias ubicaciones
+          APK_PATHS=(
+            "build/app/outputs/flutter-apk/*.apk"
+            "build/app/outputs/apk/**/*.apk"
+            "build/**/*.apk"
+            ".flet-build/**/*.apk"
+            "converted_apks/*.apk"
+            "*.apk"
+          )
+
+          APK_FILES=""
+          for pattern in "${APK_PATHS[@]}"; do
+            echo "Buscando: $pattern"
+            FOUND=$(find . -path "./$pattern" -type f 2>/dev/null || echo "")
+            if [ -n "$FOUND" ]; then
+              APK_FILES="$APK_FILES $FOUND"
+              echo "✅ Encontrado en $pattern"
+            fi
+          done
+
+          # Si no encuentra con find, buscar en todo el directorio
+          if [ -z "$APK_FILES" ]; then
+            echo "Buscando en todo el directorio..."
+            APK_FILES=$(find . -name "*.apk" -type f 2>/dev/null || echo "")
+          fi
+
+          if [ -n "$APK_FILES" ]; then
+            echo "✅ APK encontrado:"
+            echo "$APK_FILES" | tr ' ' '\n'
+            echo ""
+            echo "=== Información del APK ==="
+            for apk in $APK_FILES; do
+              if [ -f "$apk" ]; then
+                echo "Archivo: $apk"
+                ls -la "$apk"
+                echo "Tamaño: $(du -h "$apk" | cut -f1)"
+                echo "Tipo de archivo: $(file "$apk")"
+                if command -v aapt &> /dev/null; then
+                  echo "Información del APK:"
+                  aapt dump badging "$apk" | head -10 || echo "No se pudo leer el APK"
+                fi
+                echo ""
+              fi
+            done
+            echo "apk_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CRÍTICO: No se encontró ningún archivo APK"
+            echo ""
+            echo "=== Análisis de directorios ==="
+            echo "Contenido del directorio actual:"
+            ls -la
+            echo ""
+            echo "Buscando cualquier archivo .apk en todo el sistema:"
+            find / -name "*.apk" -type f 2>/dev/null | head -20 || echo "No se encontraron APK"
+            echo ""
+            echo "Buscando archivos .aab (posiblemente generados en vez de APK):"
+            find . -name "*.aab" -type f 2>/dev/null || echo "No se encontraron AAB"
+            echo ""
+            echo "Buscando archivos .apks:"
+            find . -name "*.apks" -type f 2>/dev/null || echo "No se encontraron APKS"
+            echo ""
+            echo "Directorio de trabajo de Flutter:"
+            flutter --version
+            echo ""
+            echo "Proyectos Flutter en el directorio:"
+            find . -name "pubspec.yaml" -type f || echo "No se encontraron proyectos Flutter"
+            echo ""
+            echo "=== Últimas líneas del build_full.log ==="
+            if [ -f "build_full.log" ]; then
+              tail -50 build_full.log
+            fi
+            echo ""
+            echo "=== Últimas líneas del build_fallback.log ==="
+            if [ -f "build_fallback.log" ]; then
+              tail -50 build_fallback.log
+            fi
+            echo "apk_exists=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      # ============================================
+      # ORGANIZAR Y RENOMBRAR APKS POR ARQUITECTURA
+      # ============================================
+
+      - name: Organize APKs by architecture
+        id: organize_apks
+        if: steps.verify_apk.outputs.apk_exists == 'true'
+        run: |
+          echo "=== Organizando APKs por arquitectura ==="
+
+          # Crear directorio para APKs organizados
+          mkdir -p release_apks
+
+          # Obtener la versión
+          if [ -f "pyproject.toml" ]; then
+            VERSION=$(grep -m1 '^version = "' pyproject.toml | sed 's/version = "//' | sed 's/"//')
+          else
+            VERSION="1.0.0"
+          fi
+
+          # Buscar todos los APK
+          APK_FILES=$(find . -name "*.apk" -type f 2>/dev/null | grep -v "release_apks")
+
+          # Variable para contar APKs
+          APK_COUNT=0
+          UNIVERSAL_APK=""
+
+          for apk in $APK_FILES; do
+            apk_name=$(basename "$apk")
+            apk_dir=$(dirname "$apk")
+            
+            # Determinar la arquitectura por el nombre del archivo o ubicación
+            if [[ "$apk_name" == *"arm64"* ]] || [[ "$apk_name" == *"arm64-v8a"* ]] || [[ "$apk_dir" == *"arm64-v8a"* ]]; then
+              ARCH="arm64-v8a"
+            elif [[ "$apk_name" == *"armeabi"* ]] || [[ "$apk_name" == *"armeabi-v7a"* ]] || [[ "$apk_dir" == *"armeabi-v7a"* ]]; then
+              ARCH="armeabi-v7a"
+            elif [[ "$apk_name" == *"x86_64"* ]] || [[ "$apk_dir" == *"x86_64"* ]]; then
+              ARCH="x86_64"
+            elif [[ "$apk_name" == *"x86"* ]] || [[ "$apk_dir" == *"x86"* ]]; then
+              ARCH="x86"
+            elif [[ "$apk_name" == *"universal"* ]] || [[ "$apk_dir" == *"universal"* ]] || [[ "$apk_name" == *"release"* ]] || [[ $(du -m "$apk" | cut -f1) -gt 100 ]]; then
+              ARCH="universal"
+              UNIVERSAL_APK="$apk"
+            else
+              # Intentar detectar por tamaño (los APK universales suelen ser más grandes)
+              SIZE_MB=$(du -m "$apk" | cut -f1)
+              if [ $SIZE_MB -gt 100 ]; then
+                ARCH="universal"
+                UNIVERSAL_APK="$apk"
+              else
+                # Si no se puede determinar, usar el nombre del directorio padre
+                PARENT_DIR=$(basename "$(dirname "$apk")")
+                ARCH="$PARENT_DIR"
+              fi
+            fi
+            
+            # Renombrar y copiar el APK
+            NEW_NAME="FRP-Freedom-v${VERSION}-${ARCH}-build${{ github.run_number }}.apk"
+            cp "$apk" "release_apks/$NEW_NAME"
+            echo "✅ $apk_name → $NEW_NAME"
+            
+            # Registrar información
+            echo "apk_${ARCH}_name=$NEW_NAME" >> $GITHUB_OUTPUT
+            APK_COUNT=$((APK_COUNT + 1))
+          done
+
+          # Si hay un APK universal, guardar su nombre
+          if [ -n "$UNIVERSAL_APK" ]; then
+            UNIVERSAL_NAME=$(basename "$UNIVERSAL_APK")
+            if [ -f "release_apks/$UNIVERSAL_NAME" ]; then
+              echo "universal_apk_name=$UNIVERSAL_NAME" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          echo "apk_count=$APK_COUNT" >> $GITHUB_OUTPUT
+          echo ""
+          echo "=== Resumen de APKs organizados ==="
+          ls -la release_apks/
+          echo ""
+          echo "=== Tamaños por APK ==="
+          for apk in release_apks/*.apk; do
+            echo "$(basename $apk): $(du -h $apk | cut -f1)"
+          done
+
+      - name: Get version from pyproject.toml
+        id: get_version
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "=== Obteniendo versión del proyecto ==="
+          if [ -f "pyproject.toml" ]; then
+            VERSION=$(grep -m1 '^version = "' pyproject.toml | sed 's/version = "//' | sed 's/"//')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "✅ Versión encontrada: $VERSION"
+          else
+            echo "⚠️ pyproject.toml no encontrado, usando versión por defecto"
+            echo "version=1.0.0" >> $GITHUB_OUTPUT
+          fi
+
+      # ============================================
+      # CREAR RELEASE CON MÚLTIPLES APKS
+      # ============================================
+
+      - name: Create Release with multiple APKs
+        id: create_release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify_apk.outputs.apk_exists == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}-build${{ github.run_number }}
+          name: "FRP Freedom v${{ steps.get_version.outputs.version }} (Build ${{ github.run_number }})"
+          body: |
+            ## 🚀 FRP Freedom Android APK
+
+            ### 📱 Descargas por arquitectura
+            | Arquitectura | APK |
+            |-------------|-----|
+            | **Universal** | [FRP-Freedom-v${{ steps.get_version.outputs.version }}-universal-build${{ github.run_number }}.apk](./FRP-Freedom-v${{ steps.get_version.outputs.version }}-universal-build${{ github.run_number }}.apk) |
+            | **arm64-v8a** | [FRP-Freedom-v${{ steps.get_version.outputs.version }}-arm64-v8a-build${{ github.run_number }}.apk](./FRP-Freedom-v${{ steps.get_version.outputs.version }}-arm64-v8a-build${{ github.run_number }}.apk) |
+            | **armeabi-v7a** | [FRP-Freedom-v${{ steps.get_version.outputs.version }}-armeabi-v7a-build${{ github.run_number }}.apk](./FRP-Freedom-v${{ steps.get_version.outputs.version }}-armeabi-v7a-build${{ github.run_number }}.apk) |
+            | **x86_64** | [FRP-Freedom-v${{ steps.get_version.outputs.version }}-x86_64-build${{ github.run_number }}.apk](./FRP-Freedom-v${{ steps.get_version.outputs.version }}-x86_64-build${{ github.run_number }}.apk) |
+            | **x86** | [FRP-Freedom-v${{ steps.get_version.outputs.version }}-x86-build${{ github.run_number }}.apk](./FRP-Freedom-v${{ steps.get_version.outputs.version }}-x86-build${{ github.run_number }}.apk) |
+
+            ### Información de la build
+            - **Versión**: ${{ steps.get_version.outputs.version }}
+            - **Build**: ${{ github.run_number }}
+            - **Fecha**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+            - **Commit**: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+
+            ### Contenido del Release
+            - 1 APK Universal (compatible con todas las arquitecturas)
+            - APKs específicos por arquitectura (menor tamaño)
+
+            ### Notas
+            - APK firmado con clave de depuración (debug)
+            - Compatible con Android 7.0+ (API 24+)
+            - **Recomendación**: Descarga el APK específico para tu arquitectura.
+
+          files: release_apks/*.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload APK artifacts (ZIP with all APKs)
         uses: actions/upload-artifact@v4
         with:
-          name: frp-freedom-apks
+          name: frp-freedom-android-all
           path: release_apks/*.apk
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload individual APK artifacts
+        if: steps.organize_apks.outputs.apk_count != ''
+        run: |
+          echo "=== Subiendo APKs individuales como artifacts ==="
+
+          for apk in release_apks/*.apk; do
+            if [ -f "$apk" ]; then
+              apk_name=$(basename "$apk")
+              # Extraer arquitectura del nombre
+              if [[ "$apk_name" == *"universal"* ]]; then
+                arch="universal"
+              elif [[ "$apk_name" == *"arm64-v8a"* ]]; then
+                arch="arm64-v8a"
+              elif [[ "$apk_name" == *"armeabi-v7a"* ]]; then
+                arch="armeabi-v7a"
+              elif [[ "$apk_name" == *"x86_64"* ]]; then
+                arch="x86_64"
+              elif [[ "$apk_name" == *"x86"* ]]; then
+                arch="x86"
+              else
+                arch="unknown"
+              fi
+              
+              echo "Subiendo $apk_name como artifact frp-freedom-${arch}"
+              
+              # Usar upload-artifact en un paso separado no es posible directamente,
+              # así que creamos un archivo de metadatos
+              mkdir -p "artifact_${arch}"
+              cp "$apk" "artifact_${arch}/"
+            fi
+          done
+
+      - name: Upload APK per architecture
+        uses: actions/upload-artifact@v4
+        with:
+          name: frp-freedom-universal
+          path: release_apks/*universal*.apk
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload arm64-v8a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: frp-freedom-arm64-v8a
+          path: release_apks/*arm64-v8a*.apk
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: frp-freedom-armeabi-v7a
+          path: release_apks/*armeabi-v7a*.apk
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: frp-freedom-x86_64
+          path: release_apks/*x86_64*.apk
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload x86 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: frp-freedom-x86
+          path: release_apks/*x86*.apk
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload build logs (for debugging)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build_full.log
+            build_fallback.log
+            build.log
+            build_alt*.log
+            *.log
           retention-days: 7
+
+      # ============================================
+      # PASOS DE INFORMACIÓN DEL RELEASE
+      # ============================================
+
+      - name: Output download links
+        if: steps.verify_apk.outputs.apk_exists == 'true'
+        run: |
+          echo "================================================"
+          echo " APKS GENERADOS EXITOSAMENTE"
+          echo "================================================"
+          echo ""
+          echo "📱 APKS GENERADOS:"
+          for apk in release_apks/*.apk; do
+            if [ -f "$apk" ]; then
+              echo "   $(basename $apk) - $(du -h $apk | cut -f1)"
+            fi
+          done
+          echo ""
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo " DESCARGA DIRECTA (RELEASE):"
+            echo "   https://github.com/${{ github.repository }}/releases/tag/v${{ steps.get_version.outputs.version }}-build${{ github.run_number }}"
+            echo ""
+            echo " APKS DISPONIBLES:"
+            for apk in release_apks/*.apk; do
+              if [ -f "$apk" ]; then
+                apk_name=$(basename "$apk")
+                echo "   https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}-build${{ github.run_number }}/$apk_name"
+              fi
+            done
+          else
+            echo " ARTIFACTS (ZIP):"
+            echo "   https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo " APKS EN ARTIFACTS:"
+            for apk in release_apks/*.apk; do
+              if [ -f "$apk" ]; then
+                echo "   $(basename $apk) - $(du -h $apk | cut -f1)"
+              fi
+            done
+          fi
+          echo ""
+          echo "================================================"
 
   test:
     runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'pull_request'
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Set up Python
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install dependencies
+          cache: "pip"
+
+      - name: Install test dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Run Tests
+          echo "Installing test dependencies in: $(pwd)"
+          pip install --upgrade pip
+          pip install -r requirements.txt || echo "⚠️ Algunas dependencias fallaron"
+          pip install pytest pytest-asyncio pytest-cov
+
+      - name: Run tests
         run: |
-          echo "Executing test matrix..."
-          # Puedes descomentar si usas pytest: python -m pytest
+          echo "Running tests in: $(pwd)"
+          if [ -d "tests" ]; then
+            python -m pytest tests/ -v --cov=. --cov-report=xml
+          else
+            echo "⚠️ No tests directory found, skipping tests"
+            echo '<?xml version="1.0"?><coverage></coverage>' > coverage.xml
+          fi
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
 
   android-compatibility:
     runs-on: ubuntu-latest
     needs: build
+    if: github.event_name != 'pull_request' && needs.build.result == 'success'
+
     steps:
-      - name: Download APKs for verification
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check if artifact exists
+        id: check_artifact
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: artifacts } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId,
+            });
+            const artifact = artifacts.artifacts.find(a => a.name === 'frp-freedom-android-all');
+            if (artifact) {
+              console.log('✅ Artifact found');
+              core.setOutput('exists', 'true');
+              core.setOutput('size', artifact.size_in_bytes);
+              core.setOutput('created', artifact.created_at);
+            } else {
+              console.log('❌ Artifact not found');
+              core.setOutput('exists', 'false');
+            }
+
+      - name: Install aapt and bundletool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aapt unzip
+          wget https://github.com/google/bundletool/releases/download/1.15.6/bundletool-all-1.15.6.jar
+          sudo mv bundletool-all-1.15.6.jar /usr/local/bin/bundletool.jar
+          echo '#!/bin/bash' | sudo tee /usr/local/bin/bundletool
+          echo 'java -jar /usr/local/bin/bundletool.jar "$@"' | sudo tee -a /usr/local/bin/bundletool
+          sudo chmod +x /usr/local/bin/bundletool
+
+      - name: Download APKs
+        if: steps.check_artifact.outputs.exists == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: frp-freedom-apks
-          path: downloaded_apks
+          name: frp-freedom-android-all
+          path: apks/
 
-      - name: Verify APK Integrity
+      - name: Analyze APKs
+        if: steps.check_artifact.outputs.exists == 'true'
         run: |
-          echo "=== Analizando tamaño de los APKs limpios ==="
-          ls -lh downloaded_apks/
+          echo "=== Análisis de APKs ==="
+          echo " APKs encontrados para análisis"
+
+          # Buscar todos los APK descargados
+          APK_FILES=$(find apks/ -name "*.apk" -type f 2>/dev/null)
+
+          if [ -n "$APK_FILES" ]; then
+            echo ""
+            echo "=== Archivos APK encontrados ==="
+            
+            for apk in $APK_FILES; do
+              echo ""
+              echo "=== Información del APK: $(basename $apk) ==="
+              echo "Tamaño: $(du -h "$apk" | cut -f1)"
+              echo "Ubicación: $apk"
+              echo ""
+              
+              if command -v aapt &> /dev/null; then
+                echo "Información detallada del APK:"
+                aapt dump badging "$apk" || echo "⚠️ No se pudo leer la información del APK"
+                echo ""
+              fi
+              
+              echo "Estructura del APK:"
+              unzip -l "$apk" | head -20 || echo "⚠️ No se pudo listar el contenido del APK"
+              echo ""
+            done
+            
+            echo ""
+            echo "=== Resumen de tamaños ==="
+            for apk in $APK_FILES; do
+              echo "$(basename $apk): $(du -h "$apk" | cut -f1)"
+            done
+          else
+            echo "❌ No se encontraron archivos APK para analizar"
+            exit 1
+          fi
+
+      - name: Report missing artifact
+        if: steps.check_artifact.outputs.exists == 'false'
+        run: |
+          echo "::warning::⚠️ No se encontró el artifact frp-freedom-android-all para analizar"
+          echo "::warning::📱 Esto puede deberse a que:"
+          echo "::warning::   - El job 'build' falló o se saltó"
+          echo "::warning::   - Los APKs no se generaron correctamente"
+          echo "::warning::   - El artifact expiró o fue eliminado"
+          echo "::warning::🔍 Revisa los logs del job 'build' para más información"
+
+      - name: Compatibility check summary
+        if: always()
+        run: |
+          echo "=== Resumen de compatibilidad Android ==="
+          if [ "${{ steps.check_artifact.outputs.exists }}" == "true" ]; then
+            echo "✅ APKs disponibles para análisis"
+            echo " Los APKs pueden ser probados en dispositivos Android"
+            echo " Se generaron APKs por arquitectura para optimizar tamaño"
+          else
+            echo "❌ No hay APK disponible para análisis"
+            echo " Se requiere revisar el proceso de construcción"
+          fi
+
+  notify-failure:
+    runs-on: ubuntu-latest
+    needs: [build, test, android-compatibility]
+    if: failure()
