@@ -1,12 +1,19 @@
-# Configuración de Flet para Android
+# ====================================================================
+# CONFIGURACIÓN DE PRODUCCIÓN DE FLET PARA ANDROID (OPTIMIZACIÓN DE PESO)
+# ====================================================================
+
 android:
+  # Alineado con Gradle y optimizado para compatibilidad
   min_sdk_version: 24
-  target_sdk_version: 36
-  compile_sdk_version: 36
-  build_tools_version: "36.0.0"
+  target_sdk_version: 34
+  compile_sdk_version: 34
+  build_tools_version: "34.0.0"
   ndk_version: "27.0.12077973"
 
-  # Dependencias a excluir
+  # Dividir por arquitectura (Imprescindible para bajar de 600MB a <40MB por APK)
+  split_per_abi: true
+
+  # Excluir dependencias que causan duplicación de binarios nativos o fallas en CI/CD
   dependencies:
     skip:
       - jnius
@@ -14,7 +21,7 @@ android:
       - kivy
       - plyer
 
-  # Permisos de Android
+  # Permisos requeridos estrictos para el entorno de FRP Bypass
   permissions:
     - android.permission.INTERNET
     - android.permission.ACCESS_NETWORK_STATE
@@ -22,14 +29,52 @@ android:
     - android.permission.READ_EXTERNAL_STORAGE
     - android.permission.USB_PERMISSION
 
-  # Configuraciones adicionales
+  # Configuraciones críticas de compilación y compresión para reducir peso
   build:
     skip_android_deps: true
     debug_mode: false
     enable_compression: true
+    # Forzar optimización nativa mediante argumentos del compilador NDK
+    ndk_build:
+      arguments: ["-O3", "-flto"] # Optimización por tamaño (-O3) y Link Time Optimization (-flto)
 
 app:
   name: "FRP Freedom"
   version: "1.0.0"
   build_number: 1
   package_name: "org.frpfreedom.app"
+# # Configuración de Flet para Android
+# android:
+#   min_sdk_version: 24
+#   target_sdk_version: 36
+#   compile_sdk_version: 36
+#   build_tools_version: "36.0.0"
+#   ndk_version: "27.0.12077973"
+#
+#   # Dependencias a excluir
+#   dependencies:
+#     skip:
+#       - jnius
+#       - pyjnius
+#       - kivy
+#       - plyer
+#
+#   # Permisos de Android
+#   permissions:
+#     - android.permission.INTERNET
+#     - android.permission.ACCESS_NETWORK_STATE
+#     - android.permission.WRITE_EXTERNAL_STORAGE
+#     - android.permission.READ_EXTERNAL_STORAGE
+#     - android.permission.USB_PERMISSION
+#
+#   # Configuraciones adicionales
+#   build:
+#     skip_android_deps: true
+#     debug_mode: false
+#     enable_compression: true
+#
+# app:
+#   name: "FRP Freedom"
+#   version: "1.0.0"
+#   build_number: 1
+#   package_name: "org.frpfreedom.app"
