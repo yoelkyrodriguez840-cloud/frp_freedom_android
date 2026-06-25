@@ -26,12 +26,6 @@ ICON_PATH = ASSETS_DIR / "icon.png"
 SPLASH_PATH = ASSETS_DIR / "splash.png"
 
 
-# Usar en la aplicación
-def init(self, page: ft.Page):
-    # Configurar icono
-    # ... resto del código
-
-
 class FRPFreedomApp:
     """Aplicación principal FRP Freedom para Android"""
 
@@ -59,7 +53,7 @@ class FRPFreedomApp:
 
     async def init(self, page: ft.Page):
         """Inicializar la aplicación"""
-        self.page = page
+        # self.page = page
         page.icon = str(ICON_PATH)
 
         # Configuración de la página

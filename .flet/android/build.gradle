@@ -1,0 +1,14 @@
+android {
+    defaultConfig {
+        minSdkVersion 24
+        targetSdkVersion 34  // Cambiar a 34 en vez de 36
+        versionCode 1
+        versionName "1.0.0"
+    }
+    compileSdkVersion 34  // Cambiar a 34 en vez de 36
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
