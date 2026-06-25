@@ -1125,8 +1125,3 @@ jobs:
             echo "❌ No hay APK disponible para análisis"
             echo " Se requiere revisar el proceso de construcción"
           fi
-
-  notify-failure:
-    runs-on: ubuntu-latest
-    needs: [build, test, android-compatibility]
-    if: failure()
