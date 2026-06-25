@@ -205,7 +205,6 @@ jobs:
           flutter-version: "3.19.6"
           channel: "stable"
           cache: true
-          # NOTA: 'clean' ha sido removido porque no es un input válido
 
       - name: Verify Flutter installation
         run: |
@@ -876,35 +875,84 @@ jobs:
             exit 1
           fi
 
-      - name: Compress project directory as tar.gz
-        if: always()
-        run: |
-          echo "=== Comprimiendo la carpeta del proyecto frp-freedom-android ==="
+      # ============================================
+      # NUEVOS PASOS PARA CREAR RELEASE AUTOMÁTICO
+      # ============================================
 
-          # Verificar que el directorio existe
-          if [ -d "frp_freedom_android" ]; then
-            echo "✅ Directorio frp_freedom_android encontrado"
-            
-            # Crear archivo tar.gz con timestamp
-            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-            FILENAME="frp-freedom-android-project_${TIMESTAMP}.tar.gz"
-            
-            echo "Comprimiendo..."
-            tar -czf "$FILENAME" frp_freedom_android/
-            
-            if [ -f "$FILENAME" ]; then
-              echo "✅ Compresión completada: $FILENAME"
-              echo "Tamaño: $(du -h "$FILENAME" | cut -f1)"
-              ls -la "$FILENAME"
-            else
-              echo "❌ Error al crear el archivo comprimido"
-              exit 1
-            fi
+      - name: Get version from pyproject.toml
+        id: get_version
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify_apk.outputs.apk_exists == 'true'
+        run: |
+          echo "=== Obteniendo versión del proyecto ==="
+          # Extraer versión de pyproject.toml
+          if [ -f "pyproject.toml" ]; then
+            VERSION=$(grep -m1 '^version = "' pyproject.toml | sed 's/version = "//' | sed 's/"//')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "✅ Versión encontrada: $VERSION"
           else
-            echo "⚠️ Directorio frp_freedom_android no encontrado, omitiendo compresión"
+            echo "⚠️ pyproject.toml no encontrado, usando versión por defecto"
+            echo "version=1.0.0" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload APK artifact
+      - name: Find and rename APK for release
+        id: find_apk
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify_apk.outputs.apk_exists == 'true'
+        run: |
+          echo "=== Preparando APK para Release ==="
+
+          # Buscar el APK generado (priorizar el de release)
+          APK_FILE=$(find . -name "*.apk" -type f | grep -v "converted" | head -1)
+
+          if [ -n "$APK_FILE" ] && [ -f "$APK_FILE" ]; then
+            # Crear nombre descriptivo para el release
+            VERSION="${{ steps.get_version.outputs.version }}"
+            APK_NAME="FRP-Freedom-v${VERSION}-build${{ github.run_number }}.apk"
+            cp "$APK_FILE" "$APK_NAME"
+            echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
+            echo "✅ APK renombrado a: $APK_NAME"
+            echo "Tamaño: $(du -h "$APK_NAME" | cut -f1)"
+          else
+            echo "❌ No se encontró APK para el release"
+            exit 1
+          fi
+
+      - name: Create Release
+        id: create_release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify_apk.outputs.apk_exists == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}-build${{ github.run_number }}
+          name: "FRP Freedom v${{ steps.get_version.outputs.version }} (Build ${{ github.run_number }})"
+          body: |
+            ## 🚀 FRP Freedom Android APK
+
+            ### 📱 Descarga directa
+            - **APK**: [${{ steps.find_apk.outputs.apk_name }}](./${{ steps.find_apk.outputs.apk_name }})
+
+            ### 🔧 Información de la build
+            - **Versión**: ${{ steps.get_version.outputs.version }}
+            - **Build**: ${{ github.run_number }}
+            - **Fecha**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+            - **Commit**: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+
+            ### 📦 Contenido del Release
+            - 1 archivo APK listo para instalar
+
+            ### 📋 Notas
+            - APK firmado con clave de depuración (debug)
+            - Compatible con Android 7.0+ (API 24+)
+
+            ### 🔗 Enlaces útiles
+            - [Ver código fuente](https://github.com/${{ github.repository }}/tree/${{ github.sha }})
+            - [Reportar problema](https://github.com/${{ github.repository }}/issues)
+          files: ${{ steps.find_apk.outputs.apk_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload APK artifact (ZIP)
         uses: actions/upload-artifact@v4
         with:
           name: frp-freedom-android
@@ -938,18 +986,29 @@ jobs:
             *.log
           retention-days: 7
 
-      - name: Upload APK to release (optional)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify_apk.outputs.apk_exists == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: frp-freedom-release
-          path: |
-            build/**/*.apk
-            **/build/**/*.apk
-            **/outputs/**/*.apk
-            converted_apks/*.apk
-            *.apk
-          retention-days: 90
+      # ============================================
+      # PASOS DE INFORMACIÓN DEL RELEASE
+      # ============================================
+
+      - name: Output download links
+        if: steps.verify_apk.outputs.apk_exists == 'true'
+        run: |
+          echo "================================================"
+          echo "✅ APK GENERADO EXITOSAMENTE"
+          echo "================================================"
+          echo ""
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "📱 DESCARGA DIRECTA (RELEASE):"
+            echo "   https://github.com/${{ github.repository }}/releases/tag/v${{ steps.get_version.outputs.version }}-build${{ github.run_number }}"
+            echo ""
+            echo "📥 URL DIRECTA DEL APK:"
+            echo "   https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}-build${{ github.run_number }}/${{ steps.find_apk.outputs.apk_name }}"
+          else
+            echo "📦 ARTIFACT (ZIP):"
+            echo "   https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          echo ""
+          echo "================================================"
 
       - name: Critical error - APK not created
         if: steps.verify_apk.outputs.apk_exists == 'false' || failure()
@@ -1063,7 +1122,6 @@ jobs:
         with:
           name: frp-freedom-android
           path: apk/
-          # NOTA: 'continue-on-error' ha sido removido porque no es un input válido
 
       - name: Analyze APK
         if: steps.check_artifact.outputs.exists == 'true'
