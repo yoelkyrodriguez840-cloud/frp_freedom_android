@@ -1,3 +1,25 @@
-android.minSdkVersion=21
-android.targetSdkVersion=34
-android.compileSdkVersion=34
+# Configuración para reducir el tamaño
+android.minSdkVersion=23
+android.targetSdkVersion=36
+android.compileSdkVersion=36
+android.ndkVersion=27.0.12077973
+
+# HABILITAR SLIM PYTHON - ELIMINA MÓDULOS NO USADOS
+android.slimPython=true
+
+# COMPRIMIR ASSETS
+android.compressAssets=true
+
+# ELIMINAR COMENTARIOS Y DOCSTRINGS
+android.stripComments=true
+android.stripDocstrings=true
+
+# SALTAR DEPENDENCIAS PROBLEMÁTICAS
+android.skipAndroidDeps=true
+
+# SPLIT POR ABI
+android.splitPerAbi=true
+
+# OPTIMIZACIONES
+android.treeShakeIcons=true
+android.shrinkResources=true

@@ -470,8 +470,11 @@ jobs:
             --build-number ${{ github.run_number }} \
             --yes \
             --verbose \
+            --slim-python \
+            --compress-assets \
+            --strip-comments \
+            --strip-docstrings \
             2>&1 | tee build_full.log
-
           BUILD_EXIT_CODE=${PIPESTATUS[0]}
           set +x
 
