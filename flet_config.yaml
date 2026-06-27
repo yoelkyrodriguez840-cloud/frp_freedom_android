@@ -1,24 +1,226 @@
-# ====================================================================
-# CONFIGURACIÓN DE PRODUCCIÓN DE FLET PARA ANDROID
-# ====================================================================
-
 android:
-  # Alineado con Gradle y optimizado para compatibilidad
-  min_sdk_version: 24
-  target_sdk_version: 34
-  compile_sdk_version: 34
-  build_tools_version: "34.0.0"
+  min_sdk_version: 23
+  target_sdk_version: 36
+  compile_sdk_version: 36
   ndk_version: "27.0.12077973"
-
-  # Dividir por arquitectura (Imprescindible para bajar de 600MB a <40MB por APK)
   split_per_abi: true
 
-  # ===== NUEVO: Forzar solo ARM64  ================
+  slim_python: true
+  compress_assets: true
 
-  ndk:
-    abiFilters: ["arm64-v8a"] # NOTE: comentar para produccion
+  # Especifica qué módulos INCLUIR (todos los demás se excluyen)
+  include_modules:
+    - flet
+    - flet_core
+    - flet_runtime
+    - yaml
+    - cryptography
+    - cryptography.hazmat
+    - cryptography.hazmat.primitives
+    - requests
+    - urllib3
+    - msgpack
+    - _collections_abc
+    - abc
+    - argparse
+    - base64
+    - binascii
+    - bisect
+    - builtins
+    - collections
+    - datetime
+    - enum
+    - functools
+    - hashlib
+    - heapq
+    - inspect
+    - io
+    - itertools
+    - json
+    - logging
+    - math
+    - os
+    - pathlib
+    - pickle
+    - posixpath
+    - pprint
+    - random
+    - re
+    - shutil
+    - socket
+    - ssl
+    - stat
+    - string
+    - struct
+    - subprocess
+    - sys
+    - tempfile
+    - threading
+    - time
+    - token
+    - tokenize
+    - traceback
+    - types
+    - typing
+    - urllib
+    - uuid
+    - warnings
+    - weakref
+    - zipfile
 
-  # Excluir dependencias que causan duplicación de binarios nativos o fallas en CI/CD
+  # Excluir módulos innecesarios (más específico)
+  exclude_modules:
+    # Módulos GUI (no necesarios en Android)
+    - tkinter
+    - idlelib
+    - turtledemo
+    - turtle
+    - asyncio.windows_events
+    - asyncio.windows_utils
+
+    # Módulos de desarrollo
+    - ensurepip
+    - venv
+    - distutils
+    - lib2to3
+    - unittest
+    - doctest
+    - pydoc
+    - pstats
+    - profile
+    - cProfile
+    - trace
+    - test
+    - tests
+
+    # Módulos de documentos
+    - xml.etree.ElementTree
+    - html
+    - html.parser
+    - json.tool
+    - csv
+    - mailbox
+
+    # Módulos de compresión (probablemente no necesarios)
+    - tarfile
+    - gzip
+    - bz2
+    - lzma
+    - zipapp
+
+    # Módulos de red avanzados
+    - ftplib
+    - nntplib
+    - poplib
+    - imaplib
+    - smtplib
+    - telnetlib
+    - cgi
+    - cgitb
+    - wsgiref
+
+    # Módulos de sistemas
+    - pty
+    - fcntl
+    - resource
+    - grp
+    - pwd
+    - spwd
+
+    # Módulos multimedia
+    - audioop
+    - wave
+    - chunk
+    - colorsys
+    - imghdr
+    - sndhdr
+
+    # Módulos de crypto (ya tienes cryptography)
+    - hashlib # Solo si no lo usas directamente
+    - hmac # Solo si no lo usas directamente
+
+    # Módulos de logging avanzado
+    - logging.config
+    - logging.handlers
+
+    # Otros módulos raramente usados
+    - codecs
+    - codeop
+    - contextlib
+    - contextvars # Si no usas asyncio avanzado
+    - copyreg
+    - dataclasses # Si no usas dataclasses
+    - difflib
+    - dis
+    - filecmp
+    - fileinput
+    - fnmatch
+    - formatter
+    - getopt
+    - getpass
+    - glob
+    - graphlib
+    - importlib.abc
+    - importlib.machinery
+    - importlib.util
+    - keyword
+    - linecache
+    - locale
+    - mailcap
+    - mimetypes
+    - modulefinder
+    - netrc
+    - numbers
+    - opcode
+    - optparse
+    - os.path
+    - pipes # Si no usas pipelines
+    - plistlib
+    - poplib # Si no usas POP3
+    - py_compile
+    - pyclbr
+    - pydoc_data
+    - queue
+    - quopri
+    - random # Si no usas aleatoriedad
+    - reprlib
+    - rlcompleter
+    - runpy
+    - sched
+    - selectors
+    - shelve
+    - shlex
+    - smtpd
+    - sndhdr
+    - stringprep
+    - symbol
+    - symtable
+    - tabnanny
+    - telnetlib
+    - this
+    - timeit
+    - token
+    - tokenize
+    - traceback # Si no necesitas tracebacks completos
+    - tty
+    - typing_extensions # Si usas Python 3.11+
+    - uu
+    - wave
+    - weakref # Si no usas weakrefs
+    - webbrowser
+    - xdrlib
+    - zipfile # Si no usas ZIP
+    - zipimport
+
+  build:
+    skip_android_deps: true
+    optimization:
+      tree_shake_icons: true
+      shrink_resources: true
+      compress_assets: true
+      strip_python_comments: true
+      strip_python_docstrings: true
+
   dependencies:
     skip:
       - jnius
@@ -26,25 +228,8 @@ android:
       - kivy
       - plyer
 
-  # Permisos requeridos estrictos para el entorno de FRP Bypass
-  permissions:
-    - android.permission.INTERNET
-    - android.permission.ACCESS_NETWORK_STATE
-    - android.permission.WRITE_EXTERNAL_STORAGE
-    - android.permission.READ_EXTERNAL_STORAGE
-    - android.permission.USB_PERMISSION
-
-  # Configuraciones críticas de compilación y compresión
-  build:
-    skip_android_deps: true
-    debug_mode: false
-    enable_compression: true
-    # Forzar optimización nativa mediante argumentos del compilador NDK
-    ndk_build:
-      arguments: ["-O3", "-flto"] # Optimización por tamaño (-O3) y Link Time Optimization (-flto)
-
 app:
   name: "FRP Freedom"
-  version: "1.0.0" # FIX: Corregir la vercion estatica y utilizar vercio controlada por variable de entorno
+  version: "1.0.0"
   build_number: 1
   package_name: "org.frpfreedom.app"
