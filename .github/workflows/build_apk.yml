@@ -73,15 +73,6 @@ jobs:
             default-jdk \
             file
 
-      # - name: Install bundletool (for AAB conversion)
-      #   run: |
-      #     wget https://github.com/google/bundletool/releases/download/1.15.6/bundletool-all-1.15.6.jar
-      #     sudo mv bundletool-all-1.15.6.jar /usr/local/bin/bundletool.jar
-      #     echo '#!/bin/bash' | sudo tee /usr/local/bin/bundletool
-      #     echo 'java -jar /usr/local/bin/bundletool.jar "$@"' | sudo tee -a /usr/local/bin/bundletool
-      #     sudo chmod +x /usr/local/bin/bundletool
-      #     bundletool version || echo "bundletool installed"
-
       - name: Install dependencies
         run: |
           echo "Installing dependencies in: $(pwd)"
@@ -122,77 +113,6 @@ jobs:
                   f.write('0.22.0')
           "
 
-      # - name: Verify flet installation
-      #   run: |
-      #     echo "=== Verifying flet installation ==="
-      #     python -c "import flet; print(f'Flet version: {flet.__version__}')"
-      #     which flet || echo "flet not in PATH"
-      #     flet --version || echo "flet command not available"
-      #     # Verificar dependencias clave
-      #     python -c "import yaml; print('✅ yaml installed')" || echo "❌ yaml no instalado"
-      #     python -c "import cryptography; print('✅ cryptography installed')" || echo "❌ cryptography no instalado"
-      #     python -c "import requests; print('✅ requests installed')" || echo "❌ requests no instalado"
-      #     python -c "import msgpack; print('✅ msgpack installed')" || echo "❌ msgpack no instalado"
-      #
-      #     # Verificar que jnius NO esté instalado
-      #     if pip list | grep -q jnius; then
-      #       echo "❌ jnius encontrado - desinstalando..."
-      #       pip uninstall -y jnius pyjnius || true
-      #     else
-      #       echo "✅ jnius no encontrado"
-      #     fi
-
-      # - name: Fix typing imports in Python files
-      #   run: |
-      #     echo "=== Verificando y corrigiendo importaciones de typing ==="
-      #
-      #     # Buscar archivos que usen List, Dict, Optional sin importar
-      #     find frp_freedom_android -name "*.py" -type f | while read file; do
-      #       if grep -q "List\[" "$file" && ! grep -q "from typing import.*List" "$file"; then
-      #         echo "⚠️ $file usa List pero no lo importa - corrigiendo..."
-      #         sed -i '1i from typing import List, Dict, Optional, Any, Union' "$file"
-      #       fi
-      #       if grep -q "Dict\[" "$file" && ! grep -q "from typing import.*Dict" "$file"; then
-      #         echo "⚠️ $file usa Dict pero no lo importa - corrigiendo..."
-      #         sed -i '1i from typing import List, Dict, Optional, Any, Union' "$file"
-      #       fi
-      #       if grep -q "Optional\[" "$file" && ! grep -q "from typing import.*Optional" "$file"; then
-      #         echo "⚠️ $file usa Optional pero no lo importa - corrigiendo..."
-      #         sed -i '1i from typing import List, Dict, Optional, Any, Union' "$file"
-      #       fi
-      #     done
-      #
-      # - name: Test application imports locally
-      #   run: |
-      #     echo "=== Probando imports de la aplicación ==="
-      #
-      #     # Verificar sintaxis de Python primero
-      #     echo "=== Verificando sintaxis de Python ==="
-      #     find frp_freedom_android -name "*.py" -type f -exec python -m py_compile {} \; -print || {
-      #       echo "❌ Error de sintaxis en algún archivo Python"
-      #       exit 1
-      #     }
-      #     echo "✅ Todos los archivos tienen sintaxis correcta"
-      #
-      #     # Verificar que se puede importar el módulo principal
-      #     python -c "
-      #     import sys
-      #     import os
-      #     sys.path.insert(0, os.getcwd())
-      #
-      #     try:
-      #         from frp_freedom_android.android_app import main
-      #         print('✅ Import desde frp_freedom_android exitoso')
-      #     except ImportError as e:
-      #         print(f'❌ Fallo en import desde frp_freedom_android: {e}')
-      #         try:
-      #             from android_app import main
-      #             print('✅ Import desde android_app exitoso')
-      #         except ImportError as e2:
-      #             print(f'❌ Fallo en import desde android_app: {e2}')
-      #             sys.exit(1)
-      #     "
-      #
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -205,13 +125,6 @@ jobs:
           flutter-version: "3.19.6"
           channel: "stable"
           cache: true
-
-      # - name: Verify Flutter installation
-      #   run: |
-      #     echo "=== Verifying Flutter installation ==="
-      #     flutter --version
-      #     flutter doctor -v
-      #
 
       - name: Set up Java Development Kit (JDK 17)
         uses: actions/setup-java@v4
@@ -321,80 +234,80 @@ jobs:
           echo "**/kivy*" >> .fletignore
           echo "**/plyer*" >> .fletignore
 
-      - name: Create Flet Android configuration
-        run: |
-          echo "=== Creando configuración para Flet Android ==="
-
-          # Crear directorio de configuración
-          mkdir -p .flet/android
-
-          # Crear build.gradle personalizado
-          cat > .flet/android/build.gradle << 'EOF'
-          android {
-              defaultConfig {
-                  minSdkVersion 23
-                  targetSdkVersion 36
-              }
-              compileSdkVersion 36
-              ndkVersion "27.0.12077973"
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-          }
-          EOF
-
-          echo "✅ build.gradle creado"
-          cat .flet/android/build.gradle
-
-          echo ""
-          echo "=== Creando flet_config.yaml ==="
-          cat > flet_config.yaml << 'EOF'
-          android:
-            min_sdk_version: 23
-            target_sdk_version: 36
-            compile_sdk_version: 36
-            ndk_version: "27.0.12077973"
-            # Habilitar split por ABI para reducir tamaño
-            split_per_abi: true
-            build:
-              skip_android_deps: true
-              # Agregar opciones de optimización
-              optimization:
-                tree_shake_icons: true
-                shrink_resources: true
-            dependencies:
-              skip:
-                - jnius
-                - pyjnius
-                - kivy
-                - plyer
-          EOF
-
-          echo "✅ flet_config.yaml creado"
-
-          echo ""
-          echo "=== Creando .flet/properties ==="
-          mkdir -p .flet
-          cat > .flet/properties << 'EOF'
-          android.minSdkVersion=23
-          android.targetSdkVersion=36
-          android.compileSdkVersion=36
-          android.ndkVersion=27.0.12077973
-          android.skipAndroidDeps=true
-          # Habilitar split por ABI
-          android.splitPerAbi=true
-          # Optimizaciones
-          android.treeShakeIcons=true
-          android.shrinkResources=true
-          EOF
-
-          echo "✅ .flet/properties creado"
-          cat .flet/properties
-
+      # - name: Create Flet Android configuration
+      #   run: |
+      #     echo "=== Creando configuración para Flet Android ==="
+      #
+      #     # Crear directorio de configuración
+      #     mkdir -p .flet/android
+      #
+      #     # Crear build.gradle personalizado
+      #     cat > .flet/android/build.gradle << 'EOF'
+      #     android {
+      #         defaultConfig {
+      #             minSdkVersion 23
+      #             targetSdkVersion 36
+      #         }
+      #         compileSdkVersion 36
+      #         ndkVersion "27.0.12077973"
+      #         compileOptions {
+      #             sourceCompatibility JavaVersion.VERSION_17
+      #             targetCompatibility JavaVersion.VERSION_17
+      #         }
+      #         kotlinOptions {
+      #             jvmTarget = "17"
+      #         }
+      #     }
+      #     EOF
+      #
+      #     echo "✅ build.gradle creado"
+      #     cat .flet/android/build.gradle
+      #
+      #     echo ""
+      #     echo "=== Creando flet_config.yaml ==="
+      #     cat > flet_config.yaml << 'EOF'
+      #     android:
+      #       min_sdk_version: 23
+      #       target_sdk_version: 36
+      #       compile_sdk_version: 36
+      #       ndk_version: "27.0.12077973"
+      #       # Habilitar split por ABI para reducir tamaño
+      #       split_per_abi: true
+      #       build:
+      #         skip_android_deps: true
+      #         # Agregar opciones de optimización
+      #         optimization:
+      #           tree_shake_icons: true
+      #           shrink_resources: true
+      #       dependencies:
+      #         skip:
+      #           - jnius
+      #           - pyjnius
+      #           - kivy
+      #           - plyer
+      #     EOF
+      #
+      #     echo "✅ flet_config.yaml creado"
+      #
+      #     echo ""
+      #     echo "=== Creando .flet/properties ==="
+      #     mkdir -p .flet
+      #     cat > .flet/properties << 'EOF'
+      #     android.minSdkVersion=23
+      #     android.targetSdkVersion=36
+      #     android.compileSdkVersion=36
+      #     android.ndkVersion=27.0.12077973
+      #     android.skipAndroidDeps=true
+      #     # Habilitar split por ABI
+      #     android.splitPerAbi=true
+      #     # Optimizaciones
+      #     android.treeShakeIcons=true
+      #     android.shrinkResources=true
+      #     EOF
+      #
+      #     echo "✅ .flet/properties creado"
+      #     cat .flet/properties
+      #
       # ============================================
       # CONSTRUCCIÓN PRINCIPAL CON SPLIT PER ABI
       # ============================================
@@ -470,10 +383,6 @@ jobs:
             --build-number ${{ github.run_number }} \
             --yes \
             --verbose \
-            --slim-python \
-            --compress-assets \
-            --strip-comments \
-            --strip-docstrings \
             2>&1 | tee build_full.log
           BUILD_EXIT_CODE=${PIPESTATUS[0]}
           set +x
@@ -502,53 +411,53 @@ jobs:
             exit 1
           fi
 
-      - name: Build fallback without split per ABI
-        if: steps.build_apk.outputs.build_status == 'failed' || failure()
-        id: build_fallback
-        run: |
-          echo "=== Intentando construir sin split per ABI (fallback) ==="
-          export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
-          export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
-          export FLET_VERBOSE=1
-          export FLET_LOG_LEVEL=DEBUG
-          export FLET_CLI_NO_PROMPT=1
-          export FLET_AGREE_TO_INSTALL_FLUTTER=1
-
-          # Crear configuración para debug
-          mkdir -p .flet
-          cat > .flet/properties << 'EOF'
-          android.minSdkVersion=21
-          android.targetSdkVersion=36
-          android.compileSdkVersion=36
-          android.ndkVersion=27.0.12077973
-          android.skipAndroidDeps=true
-          android.splitPerAbi=false
-          android.treeShakeIcons=true
-          android.shrinkResources=true
-          EOF
-
-          echo "✅ Configuración de fallback creada"
-          cat .flet/properties
-
-          # Limpiar construcciones anteriores
-          rm -rf build/ dist/ .flet-build/ android/
-
-          # Construir en modo universal
-          echo "=== Construyendo APK universal (fallback) ==="
-          flet build apk \
-            --build-number ${{ github.run_number }} \
-            --yes \
-            --verbose \
-            2>&1 | tee build_fallback.log
-
-          if [ ${PIPESTATUS[0]} -eq 0 ]; then
-            echo "✅ Construcción universal exitosa"
-            echo "build_status=success" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Construcción universal falló"
-            echo "build_status=failed" >> $GITHUB_OUTPUT
-            exit 1
-          fi
+      # - name: Build fallback without split per ABI
+      #   if: steps.build_apk.outputs.build_status == 'failed' || failure()
+      #   id: build_fallback
+      #   run: |
+      #     echo "=== Intentando construir sin split per ABI (fallback) ==="
+      #     export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
+      #     export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
+      #     export FLET_VERBOSE=1
+      #     export FLET_LOG_LEVEL=DEBUG
+      #     export FLET_CLI_NO_PROMPT=1
+      #     export FLET_AGREE_TO_INSTALL_FLUTTER=1
+      #
+      #     # Crear configuración para debug
+      #     mkdir -p .flet
+      #     cat > .flet/properties << 'EOF'
+      #     android.minSdkVersion=21
+      #     android.targetSdkVersion=36
+      #     android.compileSdkVersion=36
+      #     android.ndkVersion=27.0.12077973
+      #     android.skipAndroidDeps=true
+      #     android.splitPerAbi=false
+      #     android.treeShakeIcons=true
+      #     android.shrinkResources=true
+      #     EOF
+      #
+      #     echo "✅ Configuración de fallback creada"
+      #     cat .flet/properties
+      #
+      #     # Limpiar construcciones anteriores
+      #     rm -rf build/ dist/ .flet-build/ android/
+      #
+      #     # Construir en modo universal
+      #     echo "=== Construyendo APK universal (fallback) ==="
+      #     flet build apk \
+      #       --build-number ${{ github.run_number }} \
+      #       --yes \
+      #       --verbose \
+      #       2>&1 | tee build_fallback.log
+      #
+      #     if [ ${PIPESTATUS[0]} -eq 0 ]; then
+      #       echo "✅ Construcción universal exitosa"
+      #       echo "build_status=success" >> $GITHUB_OUTPUT
+      #     else
+      #       echo "❌ Construcción universal falló"
+      #       echo "build_status=failed" >> $GITHUB_OUTPUT
+      #       exit 1
+      #     fi
 
       - name: Debug build directory
         if: always()
@@ -587,27 +496,27 @@ jobs:
             fi
           fi
 
-      - name: Try alternative build methods if needed
-        if: steps.build_apk.outputs.build_status == 'failed' && steps.build_fallback.outputs.build_status == 'failed'
-        run: |
-          echo "=== Intentando métodos alternativos de construcción ==="
-          export FLET_CLI_NO_PROMPT=1
-          export FLET_AGREE_TO_INSTALL_FLUTTER=1
-
-          # Intentar con --no-android-sdk-check
-          echo "=== Método 1: Sin verificación de SDK ==="
-          export FLET_SKIP_ANDROID_SDK_CHECK=1
-          flet build apk \
-            --build-number ${{ github.run_number }} \
-            --yes \
-            --verbose \
-            2>&1 | tee build_alt1.log || true
-
-          # Intentar sin flags adicionales
-          echo "=== Método 2: Construcción básica ==="
-          flet build apk \
-            --yes \
-            2>&1 | tee build_alt2.log || true
+      # - name: Try alternative build methods if needed
+      #   if: steps.build_apk.outputs.build_status == 'failed' && steps.build_fallback.outputs.build_status == 'failed'
+      #   run: |
+      #     echo "=== Intentando métodos alternativos de construcción ==="
+      #     export FLET_CLI_NO_PROMPT=1
+      #     export FLET_AGREE_TO_INSTALL_FLUTTER=1
+      #
+      #     # Intentar con --no-android-sdk-check
+      #     echo "=== Método 1: Sin verificación de SDK ==="
+      #     export FLET_SKIP_ANDROID_SDK_CHECK=1
+      #     flet build apk \
+      #       --build-number ${{ github.run_number }} \
+      #       --yes \
+      #       --verbose \
+      #       2>&1 | tee build_alt1.log || true
+      #
+      #     # Intentar sin flags adicionales
+      #     echo "=== Método 2: Construcción básica ==="
+      #     flet build apk \
+      #       --yes \
+      #       2>&1 | tee build_alt2.log || true
 
       - name: Verify APK was created
         id: verify_apk
@@ -1048,15 +957,15 @@ jobs:
               core.setOutput('exists', 'false');
             }
 
-      - name: Install aapt and bundletool
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y aapt unzip
-          wget https://github.com/google/bundletool/releases/download/1.15.6/bundletool-all-1.15.6.jar
-          sudo mv bundletool-all-1.15.6.jar /usr/local/bin/bundletool.jar
-          echo '#!/bin/bash' | sudo tee /usr/local/bin/bundletool
-          echo 'java -jar /usr/local/bin/bundletool.jar "$@"' | sudo tee -a /usr/local/bin/bundletool
-          sudo chmod +x /usr/local/bin/bundletool
+      # - name: Install aapt and bundletool
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y aapt unzip
+      #     wget https://github.com/google/bundletool/releases/download/1.15.6/bundletool-all-1.15.6.jar
+      #     sudo mv bundletool-all-1.15.6.jar /usr/local/bin/bundletool.jar
+      #     echo '#!/bin/bash' | sudo tee /usr/local/bin/bundletool
+      #     echo 'java -jar /usr/local/bin/bundletool.jar "$@"' | sudo tee -a /usr/local/bin/bundletool
+      #     sudo chmod +x /usr/local/bin/bundletool
 
       - name: Download APKs
         if: steps.check_artifact.outputs.exists == 'true'
