@@ -230,6 +230,6 @@ android:
 
 app:
   name: "FRP Freedom"
-  version: "1.0.0" # FIX: Corregir la vercion estatica y utilizar vercio controlada por variable de entorno
+  version: "1.0.0"
   build_number: 1
   package_name: "org.frpfreedom.app"
