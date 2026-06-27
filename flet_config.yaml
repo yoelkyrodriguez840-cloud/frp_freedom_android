@@ -230,6 +230,6 @@ android:
 
 app:
   name: "FRP Freedom"
-  version: "1.0.0"
-  build_number: 1
+  version: ${APP_VERSION:-1.0.0}
+  build_number: ${BUILD_NUMBER:-1}
   package_name: "org.frpfreedom.app"

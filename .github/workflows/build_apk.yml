@@ -11,6 +11,26 @@ on:
     paths:
       - "frp_freedom_android/**"
   workflow_dispatch:
+    inputs:
+      app_version:
+        description: "Versión de la aplicación (ej: 1.0.0)"
+        required: false
+        default: "1.0.0"
+        type: string
+      build_number:
+        description: "Número de build (ej: 1)"
+        required: false
+        default: 1
+        type: number
+
+env:
+  APP_VERSION: ${{ github.event.inputs.app_version || '1.0.0' }}
+  BUILD_NUMBER: ${{ github.event.inputs.build_number || github.run_number }}
+  FLET_VERBOSE: 1
+  FLET_LOG_LEVEL: DEBUG
+  FLET_ANDROID_BUILD: true
+  FLET_CLI_NO_PROMPT: 1
+  FLET_AGREE_TO_INSTALL_FLUTTER: 1
 
 jobs:
   build:
@@ -21,6 +41,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set version from environment
+        id: set_version
+        run: |
+          echo "=== Configurando versión desde variables de entorno ==="
+          echo "APP_VERSION: ${{ env.APP_VERSION }}"
+          echo "BUILD_NUMBER: ${{ env.BUILD_NUMBER }}"
+
+          # Sanitizar versión (eliminar caracteres no válidos)
+          VERSION=$(echo "${{ env.APP_VERSION }}" | sed 's/[^0-9.]*//g')
+          BUILD_NUM=$(echo "${{ env.BUILD_NUMBER }}" | sed 's/[^0-9]*//g')
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUM" >> $GITHUB_OUTPUT
+          echo "tag_name=v${VERSION}-build${BUILD_NUM}" >> $GITHUB_OUTPUT
+
+          echo "✅ Versión sanitizada: $VERSION"
+          echo "✅ Build número: $BUILD_NUM"
+          echo "✅ Tag name: v${VERSION}-build${BUILD_NUM}"
 
       - name: Debug - Verify directory structure
         run: |
@@ -44,11 +83,6 @@ jobs:
           else
             echo "❌ requirements.txt NOT found in root!"
             exit 1
-          fi
-          if [ -f "pyproject.toml" ]; then
-            echo "✅ pyproject.toml found in root"
-          else
-            echo "⚠️ pyproject.toml NOT found (optional)"
           fi
 
       - name: Setup Python
@@ -244,14 +278,13 @@ jobs:
           echo "Building APKs with split per ABI in: $(pwd)"
           export ANDROID_SDK_ROOT="${{ github.workspace }}/android-sdk"
           export PATH="${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:$PATH"
-          export FLET_VERBOSE=1
-          export FLET_LOG_LEVEL=DEBUG
-          export FLET_ANDROID_BUILD=true
-          export FLET_CLI_NO_PROMPT=1
-          export FLET_AGREE_TO_INSTALL_FLUTTER=1
+          export APP_VERSION="${{ steps.set_version.outputs.version }}"
+          export BUILD_NUMBER="${{ steps.set_version.outputs.build_number }}"
 
           echo "=== Environment ==="
           echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+          echo "APP_VERSION: $APP_VERSION"
+          echo "BUILD_NUMBER: $BUILD_NUMBER"
           echo "PATH: $PATH"
           echo "Python: $(which python)"
           echo "Python version: $(python --version)"
@@ -282,31 +315,15 @@ jobs:
           echo "=== Espacio en disco ==="
           df -h
 
-          # Verificar configuración de Flet
-          echo "=== Verificando configuración de Flet ==="
-          if [ -d ".flet" ]; then
-            echo "✅ .flet/ existe"
-            find .flet -type f -exec echo "   {}" \;
-          else
-            echo "⚠️ .flet/ no existe"
-          fi
-
-          if [ -f "flet_config.yaml" ]; then
-            echo "✅ flet_config.yaml existe"
-            cat flet_config.yaml
-          else
-            echo "⚠️ flet_config.yaml no existe"
-          fi
-
           # Intentar construir con split per ABI
           echo "=== Iniciando construcción con split per ABI ==="
-          echo "Comando: flet build apk --split-per-abi --build-number ${{ github.run_number }} --yes --verbose"
+          echo "Comando: flet build apk --split-per-abi --build-number $BUILD_NUMBER --yes --verbose"
 
           # Ejecutar flet build con opciones adicionales
           set -x
           flet build apk \
             --split-per-abi \
-            --build-number ${{ github.run_number }} \
+            --build-number $BUILD_NUMBER \
             --yes \
             --verbose \
             2>&1 | tee build_full.log
@@ -324,14 +341,6 @@ jobs:
             # Buscar errores específicos en el log
             echo "=== Buscando errores específicos ==="
             grep -E "error|exception|failed|FAILED" build_full.log | head -30
-            
-            # Buscar específicamente el error de minSdk
-            echo "=== Buscando errores de minSdk ==="
-            grep -i "minsdk\|minsdkversion" build_full.log || echo "No se encontraron errores de minSdk"
-            
-            # Buscar errores de Gradle
-            echo "=== Buscando errores de Gradle ==="
-            grep -i "gradle" build_full.log | head -20 || echo "No se encontraron errores de Gradle"
             
             echo "build_status=failed" >> $GITHUB_OUTPUT
             exit 1
@@ -355,24 +364,6 @@ jobs:
           echo ""
           echo "Buscando archivos .apks:"
           find . -name "*.apks" -type f 2>/dev/null || echo "No se encontraron APKS"
-          echo ""
-          echo "Contenido de .flet-build si existe:"
-          if [ -d ".flet-build" ]; then
-            ls -la .flet-build/
-          fi
-          echo ""
-          echo "Contenido de build si existe:"
-          if [ -d "build" ]; then
-            ls -la build/
-            if [ -d "build/app" ]; then
-              echo "Contenido de build/app:"
-              ls -la build/app/
-              if [ -d "build/app/outputs" ]; then
-                echo "Contenido de build/app/outputs:"
-                find build/app/outputs -type f | head -20
-              fi
-            fi
-          fi
 
       - name: Verify APK was created
         id: verify_apk
@@ -380,84 +371,14 @@ jobs:
           echo "=== Verificando que el APK fue creado ==="
 
           # Buscar archivos APK en todas las ubicaciones posibles
-          echo "Buscando en ubicaciones comunes..."
-
-          # Buscar en varias ubicaciones
-          APK_PATHS=(
-            "build/app/outputs/flutter-apk/*.apk"
-            "build/app/outputs/apk/**/*.apk"
-            "build/**/*.apk"
-            ".flet-build/**/*.apk"
-            "converted_apks/*.apk"
-            "*.apk"
-          )
-
-          APK_FILES=""
-          for pattern in "${APK_PATHS[@]}"; do
-            echo "Buscando: $pattern"
-            FOUND=$(find . -path "./$pattern" -type f 2>/dev/null || echo "")
-            if [ -n "$FOUND" ]; then
-              APK_FILES="$APK_FILES $FOUND"
-              echo "✅ Encontrado en $pattern"
-            fi
-          done
-
-          # Si no encuentra con find, buscar en todo el directorio
-          if [ -z "$APK_FILES" ]; then
-            echo "Buscando en todo el directorio..."
-            APK_FILES=$(find . -name "*.apk" -type f 2>/dev/null || echo "")
-          fi
+          APK_FILES=$(find . -name "*.apk" -type f 2>/dev/null | grep -v "release_apks" || echo "")
 
           if [ -n "$APK_FILES" ]; then
             echo "✅ APK encontrado:"
             echo "$APK_FILES" | tr ' ' '\n'
-            echo ""
-            echo "=== Información del APK ==="
-            for apk in $APK_FILES; do
-              if [ -f "$apk" ]; then
-                echo "Archivo: $apk"
-                ls -la "$apk"
-                echo "Tamaño: $(du -h "$apk" | cut -f1)"
-                echo "Tipo de archivo: $(file "$apk")"
-                if command -v aapt &> /dev/null; then
-                  echo "Información del APK:"
-                  aapt dump badging "$apk" | head -10 || echo "No se pudo leer el APK"
-                fi
-                echo ""
-              fi
-            done
             echo "apk_exists=true" >> $GITHUB_OUTPUT
           else
             echo "❌ CRÍTICO: No se encontró ningún archivo APK"
-            echo ""
-            echo "=== Análisis de directorios ==="
-            echo "Contenido del directorio actual:"
-            ls -la
-            echo ""
-            echo "Buscando cualquier archivo .apk en todo el sistema:"
-            find / -name "*.apk" -type f 2>/dev/null | head -20 || echo "No se encontraron APK"
-            echo ""
-            echo "Buscando archivos .aab (posiblemente generados en vez de APK):"
-            find . -name "*.aab" -type f 2>/dev/null || echo "No se encontraron AAB"
-            echo ""
-            echo "Buscando archivos .apks:"
-            find . -name "*.apks" -type f 2>/dev/null || echo "No se encontraron APKS"
-            echo ""
-            echo "Directorio de trabajo de Flutter:"
-            flutter --version
-            echo ""
-            echo "Proyectos Flutter en el directorio:"
-            find . -name "pubspec.yaml" -type f || echo "No se encontraron proyectos Flutter"
-            echo ""
-            echo "=== Últimas líneas del build_full.log ==="
-            if [ -f "build_full.log" ]; then
-              tail -50 build_full.log
-            fi
-            echo ""
-            echo "=== Últimas líneas del build_fallback.log ==="
-            if [ -f "build_fallback.log" ]; then
-              tail -50 build_fallback.log
-            fi
             echo "apk_exists=false" >> $GITHUB_OUTPUT
             exit 1
           fi
@@ -475,19 +396,15 @@ jobs:
           # Crear directorio para APKs organizados
           mkdir -p release_apks
 
-          # Obtener la versión
-          if [ -f "pyproject.toml" ]; then
-            VERSION=$(grep -m1 '^version = "' pyproject.toml | sed 's/version = "//' | sed 's/"//')
-          else
-            VERSION="1.0.0"
-          fi
+          # Obtener la versión desde las variables de entorno
+          VERSION="${{ steps.set_version.outputs.version }}"
+          BUILD_NUM="${{ steps.set_version.outputs.build_number }}"
 
           # Buscar todos los APK
           APK_FILES=$(find . -name "*.apk" -type f 2>/dev/null | grep -v "release_apks")
 
           # Variable para contar APKs
           APK_COUNT=0
-          UNIVERSAL_APK=""
 
           for apk in $APK_FILES; do
             apk_name=$(basename "$apk")
@@ -502,15 +419,13 @@ jobs:
               ARCH="x86_64"
             elif [[ "$apk_name" == *"x86"* ]] || [[ "$apk_dir" == *"x86"* ]]; then
               ARCH="x86"
-            elif [[ "$apk_name" == *"universal"* ]] || [[ "$apk_dir" == *"universal"* ]] || [[ "$apk_name" == *"release"* ]] || [[ $(du -m "$apk" | cut -f1) -gt 100 ]]; then
+            elif [[ "$apk_name" == *"universal"* ]] || [[ "$apk_dir" == *"universal"* ]]; then
               ARCH="universal"
-              UNIVERSAL_APK="$apk"
             else
               # Intentar detectar por tamaño (los APK universales suelen ser más grandes)
               SIZE_MB=$(du -m "$apk" | cut -f1)
               if [ $SIZE_MB -gt 100 ]; then
                 ARCH="universal"
-                UNIVERSAL_APK="$apk"
               else
                 # Si no se puede determinar, usar el nombre del directorio padre
                 PARENT_DIR=$(basename "$(dirname "$apk")")
@@ -519,7 +434,7 @@ jobs:
             fi
             
             # Renombrar y copiar el APK
-            NEW_NAME="FRP-Freedom-v${VERSION}-${ARCH}-build${{ github.run_number }}.apk"
+            NEW_NAME="FRP-Freedom-v${VERSION}-${ARCH}-build${BUILD_NUM}.apk"
             cp "$apk" "release_apks/$NEW_NAME"
             echo "✅ $apk_name → $NEW_NAME"
             
@@ -527,14 +442,6 @@ jobs:
             echo "apk_${ARCH}_name=$NEW_NAME" >> $GITHUB_OUTPUT
             APK_COUNT=$((APK_COUNT + 1))
           done
-
-          # Si hay un APK universal, guardar su nombre
-          if [ -n "$UNIVERSAL_APK" ]; then
-            UNIVERSAL_NAME=$(basename "$UNIVERSAL_APK")
-            if [ -f "release_apks/$UNIVERSAL_NAME" ]; then
-              echo "universal_apk_name=$UNIVERSAL_NAME" >> $GITHUB_OUTPUT
-            fi
-          fi
 
           echo "apk_count=$APK_COUNT" >> $GITHUB_OUTPUT
           echo ""
@@ -546,18 +453,21 @@ jobs:
             echo "$(basename $apk): $(du -h $apk | cut -f1)"
           done
 
-      - name: Get version from pyproject.toml
-        id: get_version
+      # ============================================
+      # ELIMINAR TAG EXISTENTE SI YA EXISTE
+      # ============================================
+
+      - name: Delete existing tag if it exists
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          echo "=== Obteniendo versión del proyecto ==="
-          if [ -f "pyproject.toml" ]; then
-            VERSION=$(grep -m1 '^version = "' pyproject.toml | sed 's/version = "//' | sed 's/"//')
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "✅ Versión encontrada: $VERSION"
+          TAG_NAME="${{ steps.set_version.outputs.tag_name }}"
+          echo "=== Verificando si el tag $TAG_NAME ya existe ==="
+
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG_NAME"; then
+            echo "⚠️ Tag $TAG_NAME already exists, deleting it..."
+            git push origin --delete "$TAG_NAME" || echo "No se pudo eliminar el tag"
           else
-            echo "⚠️ pyproject.toml no encontrado, usando versión por defecto"
-            echo "version=1.0.0" >> $GITHUB_OUTPUT
+            echo "✅ Tag $TAG_NAME no existe, se creará uno nuevo"
           fi
 
       # ============================================
@@ -569,14 +479,14 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify_apk.outputs.apk_exists == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.get_version.outputs.version }}-build${{ github.run_number }}
-          name: "FRP Freedom v${{ steps.get_version.outputs.version }} (Build ${{ github.run_number }})"
+          tag_name: ${{ steps.set_version.outputs.tag_name }}
+          name: "FRP Freedom v${{ steps.set_version.outputs.version }} (Build ${{ steps.set_version.outputs.build_number }})"
           body: |
             ## 🚀 FRP Freedom Android APK
 
             ### Información de la build
-            - **Versión**: ${{ steps.get_version.outputs.version }}
-            - **Build**: ${{ github.run_number }}
+            - **Versión**: ${{ steps.set_version.outputs.version }}
+            - **Build**: ${{ steps.set_version.outputs.build_number }}
             - **Fecha**: $(date)
             - **Commit**: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
 
@@ -588,6 +498,13 @@ jobs:
             - APK firmado con clave de depuración (debug)
             - Compatible con Android 7.0+ (API 24+)
             - **Recomendación**: Descarga el APK específico para tu arquitectura.
+
+            ### 📱 Arquitecturas disponibles
+            - **arm64-v8a**: Dispositivos Android modernos (recomendado)
+            - **armeabi-v7a**: Dispositivos Android antiguos
+            - **x86_64**: Emuladores y dispositivos Intel
+            - **x86**: Emuladores antiguos
+            - **Universal**: Compatible con todas (tamaño mayor)
 
           files: release_apks/*.apk
           draft: false
@@ -603,38 +520,6 @@ jobs:
           path: release_apks/*.apk
           if-no-files-found: ignore
           retention-days: 30
-
-      - name: Upload individual APK artifacts
-        if: steps.organize_apks.outputs.apk_count != ''
-        run: |
-          echo "=== Subiendo APKs individuales como artifacts ==="
-
-          for apk in release_apks/*.apk; do
-            if [ -f "$apk" ]; then
-              apk_name=$(basename "$apk")
-              # Extraer arquitectura del nombre
-              if [[ "$apk_name" == *"universal"* ]]; then
-                arch="universal"
-              elif [[ "$apk_name" == *"arm64-v8a"* ]]; then
-                arch="arm64-v8a"
-              elif [[ "$apk_name" == *"armeabi-v7a"* ]]; then
-                arch="armeabi-v7a"
-              elif [[ "$apk_name" == *"x86_64"* ]]; then
-                arch="x86_64"
-              elif [[ "$apk_name" == *"x86"* ]]; then
-                arch="x86"
-              else
-                arch="unknown"
-              fi
-              
-              echo "Subiendo $apk_name como artifact frp-freedom-${arch}"
-              
-              # Usar upload-artifact en un paso separado no es posible directamente,
-              # así que creamos un archivo de metadatos
-              mkdir -p "artifact_${arch}"
-              cp "$apk" "artifact_${arch}/"
-            fi
-          done
 
       - name: Upload APK per architecture
         uses: actions/upload-artifact@v4
@@ -685,7 +570,6 @@ jobs:
             build_full.log
             build_fallback.log
             build.log
-            build_alt*.log
             *.log
           retention-days: 7
 
@@ -707,15 +591,19 @@ jobs:
             fi
           done
           echo ""
+          echo "🔖 TAG: ${{ steps.set_version.outputs.tag_name }}"
+          echo "📦 VERSIÓN: ${{ steps.set_version.outputs.version }}"
+          echo "🔢 BUILD: ${{ steps.set_version.outputs.build_number }}"
+          echo ""
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
             echo " DESCARGA DIRECTA (RELEASE):"
-            echo "   https://github.com/${{ github.repository }}/releases/tag/v${{ steps.get_version.outputs.version }}-build${{ github.run_number }}"
+            echo "   https://github.com/${{ github.repository }}/releases/tag/${{ steps.set_version.outputs.tag_name }}"
             echo ""
             echo " APKS DISPONIBLES:"
             for apk in release_apks/*.apk; do
               if [ -f "$apk" ]; then
                 apk_name=$(basename "$apk")
-                echo "   https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}-build${{ github.run_number }}/$apk_name"
+                echo "   https://github.com/${{ github.repository }}/releases/download/${{ steps.set_version.outputs.tag_name }}/$apk_name"
               fi
             done
           else
@@ -815,9 +703,6 @@ jobs:
         if: steps.check_artifact.outputs.exists == 'true'
         run: |
           echo "=== Análisis de APKs ==="
-          echo " APKs encontrados para análisis"
-
-          # Buscar todos los APK descargados
           APK_FILES=$(find apks/ -name "*.apk" -type f 2>/dev/null)
 
           if [ -n "$APK_FILES" ]; then

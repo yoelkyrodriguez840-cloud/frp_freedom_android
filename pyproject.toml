@@ -1,6 +1,6 @@
 [project]
 name = "frp-freedom"
-version = "1.0.0"                                        # FIX: Corregir la vercion estatica y utilizar vercio controlada por variable de entorno
+version = "1.0.0"
 description = "FRP Freedom - Android APK for FRP Bypass"
 readme = "README.md"
 requires-python = ">=3.9"

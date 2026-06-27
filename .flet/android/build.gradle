@@ -4,6 +4,7 @@ android {
         targetSdkVersion 34  // Cambiar a 34 en vez de 36
         versionCode 1
         versionName "1.0.0"
+        versionName System.getenv('APP_VERSION') ?: "1.0.0"
         
         // ===== NUEVO: Forzar solo ARM64 =====
         ndk {
