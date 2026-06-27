@@ -1,0 +1,57 @@
+├── LICENSE
+├── MANIFEST.ini
+├── README.md
+├── flet_config.yaml
+├── frp_freedom_android
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── adapters
+│   │   ├── __init__.py
+│   │   ├── adb_adapter.py
+│   │   ├── filesystem_adapter.py
+│   │   ├── permissions_adapter.py
+│   │   └── usb_adapter.py
+│   ├── android_app.py
+│   ├── android_config.py
+│   ├── assets
+│   │   ├── android
+│   │   ├── favicon.ico
+│   │   ├── fonts
+│   │   ├── icon.png
+│   │   ├── icon_rounded.png
+│   │   ├── icons
+│   │   ├── images
+│   │   ├── sounds
+│   │   ├── splash
+│   │   ├── splash.png
+│   │   └── splash_small.png
+│   ├── core_android
+│   │   ├── __init__.py
+│   │   ├── adb_exploits_android.py
+│   │   ├── bypass_manager_android.py
+│   │   ├── device_manager_android.py
+│   │   ├── hardware_exploits_android.py
+│   │   ├── interface_exploits_android.py
+│   │   ├── logger_android.py
+│   │   └── system_exploits_android.py
+│   ├── models
+│   │   ├── __init__.py
+│   │   └── device_model.py
+│   ├── platform_adapter.py
+│   ├── tests
+│   │   ├── conftest.py
+│   │   ├── test_adapters.py
+│   │   ├── test_bypass_manager.py
+│   │   └── test_device_manager.py
+│   └── views
+│       ├── __init__.py
+│       ├── device_view.py
+│       ├── execution_view.py
+│       ├── home_view.py
+│       ├── methods_view.py
+│       └── results_view.py
+├── gen_assets.py
+├── main.py
+├── pyproject.toml
+├── requirements.txt
+├── setup_android.py
